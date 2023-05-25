@@ -9,12 +9,5 @@ services:
     volumes:
       - ./config.yaml:/usr/local/bin/config.yaml:ro
     restart: unless-stopped
-    networks:
-      - web-network
     ports:
       - ${PORTS}
-
-networks:
-    web-network:
-        driver: bridge
-        external: true
