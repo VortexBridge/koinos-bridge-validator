@@ -81,7 +81,13 @@ func StreamEthereumBlocks(
 			"internalType": "uint256",
 			"name": "blocktime",
 			"type": "uint256"
-		  }
+		  },
+			{
+				"indexed": false,
+				"internalType": "uint32",
+				"name": "chain",
+				"type": "uint32"
+			}
 		],
 		"name": "TokensLockedEvent",
 		"type": "event"
@@ -362,6 +368,12 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
+			chain, err := strconv.ParseUint(ethTx.ToChain, 0, 32)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+
 			completeTransferHash := &bridge_pb.CompleteTransferHash{
 				Action:        bridge_pb.ActionId_complete_transfer,
 				TransactionId: txId,
@@ -370,6 +382,7 @@ func processEthereumRequestNewSignaturesEvent(
 				Amount:        amount,
 				ContractId:    koinosContractAddr,
 				Expiration:    newExpiration,
+				Chain:         uint32(chain),
 			}
 
 			completeTransferHashBytes, err := proto.Marshal(completeTransferHash)
@@ -542,6 +555,7 @@ func processEthereumTokensLockedEvent(
 		Recipient string
 		Amount    *big.Int
 		Blocktime *big.Int
+		Chain     uint32
 	}{}
 
 	err := eventAbi.UnpackIntoInterface(&event, "TokensLockedEvent", vLog.Data)
@@ -557,6 +571,7 @@ func processEthereumTokensLockedEvent(
 	ethToken := event.Token.Hex()
 	amount := event.Amount.Uint64()
 	blocktime := event.Blocktime.Uint64()
+	chain := event.Chain
 
 	koinosToken, err := base58.Decode(tokenAddresses[ethToken].KoinosAddress)
 	if err != nil {
@@ -570,7 +585,7 @@ func processEthereumTokensLockedEvent(
 		panic(err)
 	}
 
-	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | amount: %s ", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Amount.String())
+	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | amount: %s  | chain: %s", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Amount.String(), chain)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 
@@ -583,6 +598,7 @@ func processEthereumTokensLockedEvent(
 		Amount:        amount,
 		ContractId:    koinosContractAddr,
 		Expiration:    expiration,
+		Chain:         chain,
 	}
 
 	completeTransferHashBytes, err := proto.Marshal(completeTransferHash)
@@ -631,6 +647,7 @@ func processEthereumTokensLockedEvent(
 	ethTx.BlockNumber = vLog.BlockNumber
 	ethTx.BlockTime = blocktime
 	ethTx.Expiration = expiration
+	ethTx.ToChain = fmt.Sprint(chain)
 	if ethTx.Status != bridge_pb.TransactionStatus_completed {
 		ethTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 	}
@@ -671,7 +688,7 @@ func processEthereumTokensLockedEvent(
 	}
 
 	if ethTx.Status != bridge_pb.TransactionStatus_completed &&
-		len(ethTx.Signatures) >= ((((len(validators)/2)*10)/3)*2)/10+1 {
+		len(ethTx.Signatures) >= (((len(validators)/2)*10)/7) {
 		ethTx.Status = bridge_pb.TransactionStatus_signed
 	}
 
