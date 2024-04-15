@@ -410,7 +410,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		chainId, err := strconv.ParseUint(submittedSignature.Transaction.ToChain, 0, 64)
+		chainId, err := strconv.ParseUint(submittedSignature.Transaction.ToChain, 0, 32)
 		if err != nil {
 			log.Errorf(err.Error())
 			w.WriteHeader(http.StatusBadRequest)
@@ -425,7 +425,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(err.Error()))
 			return
 		} else {
-			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txIdBytes, operationId, ethToken, recipient, amount, api.ethContractAddress, submittedSignature.Transaction.Expiration, chainId)
+			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txIdBytes, operationId, ethToken, recipient, amount, api.ethContractAddress, submittedSignature.Transaction.Expiration, uint32(chainId))
 
 			if prefixedHash.Hex() != submittedSignature.Transaction.Hash {
 				errMsg := fmt.Sprintf("the calulated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, prefixedHash.Hex())

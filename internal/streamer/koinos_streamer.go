@@ -235,20 +235,21 @@ func processRequestNewSignaturesEvent(
 			ethereumToken := common.HexToAddress(koinosTx.EthToken)
 			recipient := common.HexToAddress(koinosTx.Recipient)
 			txId := common.FromHex(koinosTx.Id)
+
 			opId, err := strconv.ParseUint(koinosTx.OpId, 0, 64)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
 			}
 
-			chain, err := strconv.ParseUint(koinosTx.ToChain, 0, 64)
+			chain, err := strconv.ParseUint(koinosTx.ToChain, 0, 32)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
 			}
 
 			// sign the transaction
-			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), recipient.Bytes(), koinosTx.Amount, ethereumContractAddr, newExpiration, chain)
+			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), recipient.Bytes(), koinosTx.Amount, ethereumContractAddr, newExpiration, uint32(chain))
 
 			sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 			sigHex := "0x" + common.Bytes2Hex(sigBytes)
@@ -440,7 +441,7 @@ func processKoinosTokensLockedEvent(
 	expiration := blocktime + uint64(signaturesExpiration)
 
 	// sign the transaction
-	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), amount, ethereumContractAddr, expiration, uint64(chainId))
+	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), amount, ethereumContractAddr, expiration, chainId)
 
 	sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 	sigHex := "0x" + common.Bytes2Hex(sigBytes)
