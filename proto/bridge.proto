@@ -36,7 +36,6 @@ message transaction {
     repeated string signatures = 14;
     transaction_status status = 15;
     string completion_transaction_id = 16;
-    string to_chain = 17;
 }
 
 enum action_id {
@@ -59,7 +58,6 @@ message complete_transfer_hash {
     uint64 amount = 5;
     bytes contract_id = 6;
     uint64 expiration = 7;
-    uint32 chain = 8;
 }
 
 message submitted_signature {
@@ -73,7 +71,6 @@ message tokens_locked_event {
     bytes token = 2;
     string amount = 3;
     string recipient = 4;
-    uint32 chain_id = 5;
 }
   
 message transfer_completed_event {
