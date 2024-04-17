@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -275,7 +274,7 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 	return signatures, nil
 }
 
-func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, recipient []byte, amountStr string, ethContractAddress common.Address, expiration uint64, chainId uint32) (common.Hash, common.Hash) {
+func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, recipient []byte, amountStr string, ethContractAddress common.Address, expiration uint64, chainId uint64) (common.Hash, common.Hash) {
 	amount, err := strconv.ParseUint(amountStr, 0, 64)
 	if err != nil {
 		log.Error(err.Error())
@@ -290,7 +289,7 @@ func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, 
 		common.LeftPadBytes(big.NewInt(int64(amount)).Bytes(), 32),
 		ethContractAddress.Bytes(),
 		common.LeftPadBytes(big.NewInt(int64(expiration)).Bytes(), 32),
-		uint32ToBytes(chainId),
+		common.LeftPadBytes(big.NewInt(int64(chainId)).Bytes(), 4),
 	)
 
 	prefixedHash := crypto.Keccak256Hash(
@@ -299,10 +298,4 @@ func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, 
 	)
 
 	return hash, prefixedHash
-}
-
-func uint32ToBytes(val uint32) []byte {
-	result := make([]byte, 4)
-	binary.LittleEndian.PutUint32(result, val)
-	return result
 }
