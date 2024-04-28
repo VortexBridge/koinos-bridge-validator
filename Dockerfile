@@ -14,4 +14,6 @@ RUN go get ./... && \
 
 FROM alpine:latest
 COPY --from=builder /koinos-bridge/koinos_bridge /usr/local/bin
+COPY config.yml /root/~/.koinos/config.yml
+
 ENTRYPOINT [ "/usr/local/bin/koinos_bridge" ]
