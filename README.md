@@ -9,6 +9,15 @@ Start a node
 go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
 ```
 
+Start test node 1
+```bash
+go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
+```
+Start test node 2
+```bash
+go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
+```
+
 Query transactions status
 ```bash
 curl -X GET \

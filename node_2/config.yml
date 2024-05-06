@@ -1,0 +1,25 @@
+bridge:
+  reset: false
+  api-url: ":3011"
+  ethereum-rpc: "https://ethereum-sepolia-rpc.publicnode.com"
+  ethereum-pk: "331858b783b3f7234e89f086a2ff3b33de5c4e07dc558dd3c84a1e7de516d615"
+  ethereum-contract: "0x06c680642DA9a35Fd88e7702CD718FbA3CBc3Bde"
+  ethereum-max-blocks-stream: 500
+  ethereum-block-start: 5833547
+  koinos-rpc: "https://harbinger-api.koinos.io"
+  koinos-pk: "5KFNXAYPcFypcG7VZr8oFM5UQqEnn9kF64Jd4AmhoDL2btLQDfw"
+  koinos-contract: 1Fp3iNkmGKMPVdTpC7i3rttBBXVi7CDoX7
+  koinos-block-start: 8185823
+  validators:
+    val1:
+      ethereum-address: "0x7EB00942c7387da2Be7d5a65B50d9B82c0Db4cfc"
+      koinos-address: 1NyaTjhcDQEZMGWSSmhEXZoP3G9NSQ7SZN
+      api-url: http://localhost:3020
+    val2:
+      ethereum-address: "0x36D5Ed22c7Eb49026ae177f52462481b46B9dabf"
+      koinos-address: 1H3M91vnofVzFBJjvVJ41oy6dNdZeHqxdj
+      api-url: http://localhost:3011
+  tokens:
+    koin:
+      ethereum-address: "0x6b176fB1D3c420DBFd3AA51De597f8d2e5752556"
+      koinos-address: 1FaSvLjQJsCJKq5ybmGsMMQs8RQYyVv8ju
