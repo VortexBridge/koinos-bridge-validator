@@ -11,11 +11,11 @@ go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
 
 Start test node 1
 ```bash
-go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
+go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_1"
 ```
 Start test node 2
 ```bash
-go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_test"
+go run cmd/koinos-bridge-validator/main.go -d "$(pwd)/node_2"
 ```
 
 Query transactions status
