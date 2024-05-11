@@ -48,7 +48,7 @@ func StreamEthereumBlocks(
 	ethPollingTime uint,
 ) {
 	defer wg.Done()
-	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,string,uint256)"))
+	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,string,uint256,uint32)"))
 	tokensLockedEventAbiStr := `[{
 		"anonymous": false,
 		"inputs": [
@@ -224,6 +224,9 @@ func StreamEthereumBlocks(
 					toBlock = fromBlock + ethMaxBlocksToStream
 				}
 
+				log.Errorf("tokensLockedEventTopic %s", tokensLockedEventTopic) // token event
+				log.Errorf("transferCompletedEventTopic %s", transferCompletedEventTopic)
+				log.Errorf("requestNewSignaturesEventTopic %s", requestNewSignaturesEventTopic)
 				if toBlock <= latestblock {
 					query := ethereum.FilterQuery{
 						FromBlock: big.NewInt(int64(fromBlock)),
@@ -254,6 +257,15 @@ func StreamEthereumBlocks(
 
 							if vLog.Topics[0] == tokensLockedEventTopic {
 								// if TokensLockedEvent
+								log.Errorf("koinosPK %s", koinosPK)
+								log.Errorf("koinosAddress %s", koinosAddress)
+								log.Errorf("koinosContractAddr %s", koinosContractAddr)
+								log.Errorf("tokenAddresses %s", tokenAddresses)
+								log.Errorf("ethTxStore %s", ethTxStore)
+								log.Errorf("signaturesExpiration %s", signaturesExpiration)
+								log.Errorf("validators %s", validators)
+								log.Errorf("vLog %s", vLog)
+								log.Errorf("tokensLockedEventAbi %s", tokensLockedEventAbi)
 								processEthereumTokensLockedEvent(
 									koinosPK,
 									koinosAddress,
@@ -627,6 +639,11 @@ func processEthereumTokensLockedEvent(
 		ethTx.Validators = []string{koinosAddress}
 		ethTx.Signatures = []string{sigB64}
 	} else {
+
+		println("ABCD")
+		log.Errorf("ethTx.Hash %s", ethTx.Hash)
+		log.Errorf("hashB64 %s", hashB64)
+
 		if ethTx.Hash != "" && ethTx.Hash != hashB64 {
 			errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one already received %s != calculated %s", txIdHex, ethTx.Hash, hashB64)
 			log.Errorf(errMsg)
