@@ -4,7 +4,7 @@ bridge:
   ethereum-rpc: "https://ethereum-sepolia-rpc.publicnode.com"
   ethereum-pk: "331858b783b3f7234e89f086a2ff3b33de5c4e07dc558dd3c84a1e7de516d615"
   ethereum-contract: "0x06c680642DA9a35Fd88e7702CD718FbA3CBc3Bde"
-  ethereum-max-blocks-stream: 5
+  ethereum-max-blocks-stream: 500
   ethereum-block-start: 5897509
   koinos-rpc: "https://harbinger-api.koinos.io"
   koinos-pk: "5KFNXAYPcFypcG7VZr8oFM5UQqEnn9kF64Jd4AmhoDL2btLQDfw"
