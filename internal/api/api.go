@@ -228,6 +228,21 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		chain64, err := strconv.ParseUint(submittedSignature.Transaction.ToChain, 0, 32)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid chain"))
+			return
+		}
+
+		if chain64 > uint64(^uint32(0)) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid overflow"))
+			return
+		}
+
+		chain := uint32(chain64)
+
 		koinosToken, err := base58.Decode(submittedSignature.Transaction.KoinosToken)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -250,6 +265,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			Amount:        amount,
 			ContractId:    api.koinosContractAddress,
 			Expiration:    submittedSignature.Transaction.Expiration,
+			Chain:         chain,
 		}
 
 		completeTransferHashBytes, err := proto.Marshal(completeTransferHash)
