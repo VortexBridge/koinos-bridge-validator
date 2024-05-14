@@ -9,7 +9,7 @@ bridge:
   koinos-rpc: "https://harbinger-api.koinos.io"
   koinos-pk: "5KFNXAYPcFypcG7VZr8oFM5UQqEnn9kF64Jd4AmhoDL2btLQDfw"
   koinos-contract: 1Fp3iNkmGKMPVdTpC7i3rttBBXVi7CDoX7
-  koinos-block-start: 9453874
+  koinos-block-start: 8457207
   validators:
     val1:
       ethereum-address: "0x7EB00942c7387da2Be7d5a65B50d9B82c0Db4cfc"
