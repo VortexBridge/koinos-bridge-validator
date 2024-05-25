@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -61,6 +63,15 @@ func main() {
 	baseDir := flag.StringP(basedirOption, "d", basedirDefault, "the base directory")
 
 	flag.Parse()
+
+	// Expand ~ to the home directory (otherwise you wind up with /home/user/~/.koinos)
+	if strings.HasPrefix(*baseDir, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			panic(fmt.Sprintf("Could not get home directory: %v", err))
+		}
+		*baseDir = filepath.Join(homeDir, (*baseDir)[1:])
+	}
 
 	var err error
 	*baseDir, err = koinosUtil.InitBaseDir(*baseDir)

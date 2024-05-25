@@ -14,6 +14,7 @@ RUN go get ./... && \
 
 FROM alpine:latest
 COPY --from=builder /koinos-bridge/koinos_bridge /usr/local/bin
-COPY config.yml /root/~/.koinos/config.yml
+# instead of copying the config into the built image, mount it with --mount type=bind,source=/path/to/config.yml,target=/root/.koinos/config.yml
+# (SEE README)
 
-ENTRYPOINT [ "/usr/local/bin/koinos_bridge" ]
+CMD [ "/usr/local/bin/koinos_bridge" ]
