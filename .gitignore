@@ -16,3 +16,10 @@
 node_test*
 node_1/bridge*
 node_2/bridge*
+
+# a .koinos directory of it exists here
+.koinos
+# make sure config.yml is not checked in
+config.yml
+# env files if those are used in the future
+.env
