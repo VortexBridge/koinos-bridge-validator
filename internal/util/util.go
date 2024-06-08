@@ -274,8 +274,13 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 	return signatures, nil
 }
 
-func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, recipient []byte, amountStr string, ethContractAddress common.Address, expiration uint64, chainId uint64) (common.Hash, common.Hash) {
-	amount, err := strconv.ParseUint(amountStr, 0, 64)
+func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, relayer []byte, recipient []byte, amountStr string, paymentStr string, metadataStr string, ethContractAddress common.Address, expiration uint64, chainId uint64) (common.Hash, common.Hash) {
+	amount, err := strconv.ParseUint(amountStr, 10, 64)
+	if err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+	payment, err := strconv.ParseUint(paymentStr, 10, 64)
 	if err != nil {
 		log.Error(err.Error())
 		panic(err)
@@ -285,8 +290,11 @@ func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, 
 		txIdBytes,
 		common.LeftPadBytes(big.NewInt(int64(operationId)).Bytes(), 32),
 		ethToken,
+		relayer,
 		recipient,
 		common.LeftPadBytes(big.NewInt(int64(amount)).Bytes(), 32),
+		common.LeftPadBytes(big.NewInt(int64(payment)).Bytes(), 32),
+		[]byte(metadataStr),
 		ethContractAddress.Bytes(),
 		common.LeftPadBytes(big.NewInt(int64(expiration)).Bytes(), 32),
 		common.LeftPadBytes(big.NewInt(int64(chainId)).Bytes(), 4),

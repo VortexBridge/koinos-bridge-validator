@@ -234,6 +234,7 @@ func processRequestNewSignaturesEvent(
 		if blocktime >= allowedRequestNewSignaturesBlockTime {
 			ethereumToken := common.HexToAddress(koinosTx.EthToken)
 			recipient := common.HexToAddress(koinosTx.Recipient)
+			relayer := common.HexToAddress(koinosTx.Relayer)
 			txId := common.FromHex(koinosTx.Id)
 
 			opId, err := strconv.ParseUint(koinosTx.OpId, 0, 64)
@@ -249,7 +250,7 @@ func processRequestNewSignaturesEvent(
 			}
 
 			// sign the transaction
-			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), recipient.Bytes(), koinosTx.Amount, ethereumContractAddr, newExpiration, chain)
+			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), relayer.Bytes(), recipient.Bytes(), koinosTx.Amount, koinosTx.Payment, koinosTx.Metadata, ethereumContractAddr, newExpiration, chain)
 
 			sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 			sigHex := "0x" + common.Bytes2Hex(sigBytes)
@@ -428,7 +429,9 @@ func processKoinosTokensLockedEvent(
 	from := base58.Encode(tokensLockedEvent.From)
 	koinosToken := base58.Encode(tokensLockedEvent.Token)
 	amount := tokensLockedEvent.Amount
+	payment := tokensLockedEvent.Payment
 	recipient := common.HexToAddress(tokensLockedEvent.Recipient)
+	relayer := common.HexToAddress(tokensLockedEvent.Relayer)
 	relayerStr := fmt.Sprint(tokensLockedEvent.Relayer)
 	metadataStr := fmt.Sprint(tokensLockedEvent.Metadata)
 	paymenttStr := fmt.Sprint(tokensLockedEvent.Payment)
@@ -439,12 +442,12 @@ func processKoinosTokensLockedEvent(
 
 	ethereumToken := common.HexToAddress(tokenAddresses[koinosToken].EthereumAddress)
 
-	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | amount: %s | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, amountStr, chainIdStr)
+	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | amount: %s | chain: %s | relayer: %s | payment: %s | metadata: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, amountStr, chainIdStr, relayerStr, paymenttStr, metadataStr)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 
 	// sign the transaction
-	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), amount, ethereumContractAddr, expiration, uint64(chainId))
+	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), relayer.Bytes(), recipient.Bytes(), amount, payment, metadataStr, ethereumContractAddr, expiration, uint64(chainId))
 
 	sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 	sigHex := "0x" + common.Bytes2Hex(sigBytes)

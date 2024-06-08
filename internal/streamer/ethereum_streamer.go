@@ -48,7 +48,7 @@ func StreamEthereumBlocks(
 	ethPollingTime uint,
 ) {
 	defer wg.Done()
-	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,string,uint256,uint32)"))
+	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,uint256,string,string,string,uint256,uint32)"))
 	tokensLockedEventAbiStr := `[{
 		"anonymous": false,
 		"inputs": [
@@ -72,8 +72,26 @@ func StreamEthereumBlocks(
 		  },
 		  {
 			"indexed": false,
+			"internalType": "uint256",
+			"name": "payment",
+			"type": "uint256"
+		  },
+		  {
+			"indexed": false,
+			"internalType": "string",
+			"name": "relayer",
+			"type": "string"
+		  },
+		  {
+			"indexed": false,
 			"internalType": "string",
 			"name": "recipient",
+			"type": "string"
+		  },
+		  {
+			"indexed": false,
+			"internalType": "string",
+			"name": "metadata",
 			"type": "string"
 		  },
 		  {
@@ -355,13 +373,25 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
+			relayer, err := base58.Decode(ethTx.Relayer)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+
 			recipient, err := base58.Decode(ethTx.Recipient)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
 			}
 
-			amount, err := strconv.ParseUint(ethTx.Amount, 0, 64)
+			amount, err := strconv.ParseUint(ethTx.Amount, 10, 64)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+
+			payment, err := strconv.ParseUint(ethTx.Payment, 10, 64)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
@@ -372,6 +402,8 @@ func processEthereumRequestNewSignaturesEvent(
 				log.Error(err.Error())
 				panic(err)
 			}
+
+			metadata := ethTx.Metadata
 
 			completeTransferHash := &bridge_pb.CompleteTransferHash{
 				Action:        bridge_pb.ActionId_complete_transfer,

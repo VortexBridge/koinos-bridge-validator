@@ -56,7 +56,7 @@ curl -X GET \
   --header 'Accept: */*'
 
 curl -X GET \
-  'http://localhost:3020/GetKoinosTransaction?TransactionId=0x12207638d5874c57ff042d9268927f79c8cd151d3ff0f94b2e366d154cc1c2d9807f' \
+  'http://localhost:3020/GetKoinosTransaction?TransactionId=0x12203e1ba6fb09fd000e101337de7595c73357839a71c81ea5bb9997a03f294671e1' \
   --header 'Accept: */*'
 ```
 
