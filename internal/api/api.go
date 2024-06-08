@@ -221,7 +221,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		// check transaction hash
 		txIdBytes := common.FromHex(submittedSignature.Transaction.Id)
 
-		amount, err := strconv.ParseUint(submittedSignature.Transaction.Amount, 10, 64)
+		amount, err := strconv.ParseUint(submittedSignature.Transaction.Amount, 0, 64)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Invalid amount"))
@@ -264,24 +264,34 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		payment, err := strconv.ParseUint(submittedSignature.Transaction.Payment, 10, 64)
+		payment, err := strconv.ParseUint(submittedSignature.Transaction.Payment, 0, 64)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Invalid payment"))
 			return
 		}
 
-		metadata := submittedSignature.Transaction.Metadata
+		var metadataBytes []byte
+		if metadata := submittedSignature.Transaction.Metadata; metadata != "" {
+			var err error
+			metadataBytes, err = common.ParseHexOrString(metadata)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+		} else {
+			metadataBytes = []byte{}
+		}
 
 		completeTransferHash := &bridge_pb.CompleteTransferHash{
 			Action:        bridge_pb.ActionId_complete_transfer,
 			TransactionId: txIdBytes,
 			Token:         koinosToken,
-			Relayer:       relayer,
 			Recipient:     recipient,
+			Relayer:       relayer,
 			Amount:        amount,
 			Payment:       payment,
-			Metadata:      metadata,
+			Metadata:      string(metadataBytes),
 			ContractId:    api.koinosContractAddress,
 			Expiration:    submittedSignature.Transaction.Expiration,
 			Chain:         chain,
@@ -298,7 +308,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		hashB64 := base64.URLEncoding.EncodeToString(hash[:])
 
 		if hashB64 != submittedSignature.Transaction.Hash {
-			errMsg := fmt.Sprintf("the calulated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, hashB64)
+			errMsg := fmt.Sprintf("the calulated yyy  hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, hashB64)
 			log.Errorf(errMsg)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(errMsg))
@@ -368,7 +378,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if ethTx.Hash != hashB64 {
-				errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Hash, ethTx.Hash, hashB64)
+				errMsg := fmt.Sprintf("the calculated fff hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Hash, ethTx.Hash, hashB64)
 
 				log.Errorf(errMsg)
 				w.WriteHeader(http.StatusBadRequest)
@@ -474,7 +484,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txIdBytes, operationId, ethToken, relayer, recipient, amount, payment, metadata, api.ethContractAddress, submittedSignature.Transaction.Expiration, chainId)
 
 			if prefixedHash.Hex() != submittedSignature.Transaction.Hash {
-				errMsg := fmt.Sprintf("the calulated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, prefixedHash.Hex())
+				errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, prefixedHash.Hex())
 				log.Errorf(errMsg)
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte(errMsg))
@@ -545,7 +555,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 				}
 
 				if koinosTx.Hash != prefixedHash.Hex() {
-					errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Hash, koinosTx.Hash, prefixedHash.Hex())
+					errMsg := fmt.Sprintf("the calculated ggg hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Hash, koinosTx.Hash, prefixedHash.Hex())
 
 					log.Errorf(errMsg)
 					w.WriteHeader(http.StatusBadRequest)

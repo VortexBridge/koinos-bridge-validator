@@ -385,13 +385,13 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
-			amount, err := strconv.ParseUint(ethTx.Amount, 10, 64)
+			amount, err := strconv.ParseUint(ethTx.Amount, 0, 64)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
 			}
 
-			payment, err := strconv.ParseUint(ethTx.Payment, 10, 64)
+			payment, err := strconv.ParseUint(ethTx.Payment, 0, 64)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
@@ -409,8 +409,8 @@ func processEthereumRequestNewSignaturesEvent(
 				Action:        bridge_pb.ActionId_complete_transfer,
 				TransactionId: txId,
 				Token:         koinosToken,
-				Relayer:       relayer,
 				Recipient:     recipient,
+				Relayer:       relayer,
 				Amount:        amount,
 				Payment:       payment,
 				Metadata:      metadata,
@@ -586,8 +586,11 @@ func processEthereumTokensLockedEvent(
 	event := struct {
 		Token     common.Address
 		From      common.Address
+		Relayer   string
 		Recipient string
 		Amount    *big.Int
+		Payment   *big.Int
+		Metadata  string
 		Blocktime *big.Int
 		Chain     uint32
 	}{}
@@ -604,6 +607,8 @@ func processEthereumTokensLockedEvent(
 	ethFrom := event.From.Hex()
 	ethToken := event.Token.Hex()
 	amount := event.Amount.Uint64()
+	payment := event.Payment.Uint64()
+	metadata := event.Metadata
 	blocktime := event.Blocktime.Uint64()
 	chain := event.Chain
 
@@ -619,6 +624,12 @@ func processEthereumTokensLockedEvent(
 		panic(err)
 	}
 
+	relayer, err := base58.Decode(event.Relayer)
+	if err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+
 	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | amount: %s  | chain: %d", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Amount.String(), chain)
 
 	expiration := blocktime + uint64(signaturesExpiration)
@@ -629,7 +640,10 @@ func processEthereumTokensLockedEvent(
 		TransactionId: txId,
 		Token:         koinosToken,
 		Recipient:     recipient,
+		Relayer:       relayer,
 		Amount:        amount,
+		Payment:       payment,
+		Metadata:      metadata,
 		ContractId:    koinosContractAddr,
 		Expiration:    expiration,
 		Chain:         chain,
@@ -663,7 +677,7 @@ func processEthereumTokensLockedEvent(
 	} else {
 
 		if ethTx.Hash != "" && ethTx.Hash != hashB64 {
-			errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one already received %s != calculated %s", txIdHex, ethTx.Hash, hashB64)
+			errMsg := fmt.Sprintf("the calculated sss hash for tx %s is different than the one already received %s != calculated %s", txIdHex, ethTx.Hash, hashB64)
 			log.Errorf(errMsg)
 			panic(fmt.Errorf(errMsg))
 		}

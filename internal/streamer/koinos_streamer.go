@@ -468,7 +468,7 @@ func processKoinosTokensLockedEvent(
 		koinosTx.Signatures = []string{sigHex}
 	} else {
 		if koinosTx.Hash != "" && koinosTx.Hash != prefixedHash.Hex() {
-			errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one already received %s != calculated %s", txIdHex, koinosTx.Hash, prefixedHash.Hex())
+			errMsg := fmt.Sprintf("the calculated ddd hash for tx %s is different than the one already received %s != calculated %s", txIdHex, koinosTx.Hash, prefixedHash.Hex())
 			log.Errorf(errMsg)
 			panic(fmt.Errorf(errMsg))
 		}

@@ -274,36 +274,65 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 	return signatures, nil
 }
 
-func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, relayer []byte, recipient []byte, amountStr string, paymentStr string, metadataStr string, ethContractAddress common.Address, expiration uint64, chainId uint64) (common.Hash, common.Hash) {
-	amount, err := strconv.ParseUint(amountStr, 10, 64)
+func GenerateEthereumCompleteTransferHash(txIdBytes []byte, operationId uint64, ethToken []byte, recipient []byte, relayer []byte, amountStr string, paymentStr string, metadataStr string, ethContractAddress common.Address, expiration uint64, chainId uint64) (common.Hash, common.Hash) {
+	amount, err := strconv.ParseUint(amountStr, 0, 64)
 	if err != nil {
 		log.Error(err.Error())
 		panic(err)
 	}
-	payment, err := strconv.ParseUint(paymentStr, 10, 64)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
+	var payment uint64
+	if paymentStr == "" {
+		payment = 0
+	} else {
+		var err error
+		payment, err = strconv.ParseUint(paymentStr, 0, 64)
+		if err != nil {
+			log.Error(err.Error())
+			panic(err)
+		}
 	}
+
+	metadataBytes := []byte(metadataStr)
+	if metadataStr == "" {
+		metadataBytes = []byte{}
+	}
+
+	// Debugging prints
+	fmt.Printf("txIdBytes: %x\n", txIdBytes)
+	fmt.Printf("operationId: %d\n", operationId)
+	fmt.Printf("ethToken: %x\n", ethToken)
+	fmt.Printf("recipient: %x\n", recipient)
+	fmt.Printf("relayer: %x\n", relayer)
+	fmt.Printf("amount: %d\n", amount)
+	fmt.Printf("payment: %d\n", payment)
+	fmt.Printf("metadataBytes: %x\n", metadataBytes)
+	fmt.Printf("ethContractAddress: %x\n", ethContractAddress.Bytes())
+	fmt.Printf("expiration: %d\n", expiration)
+	fmt.Printf("chainId: %d\n", chainId)
+
 	hash := crypto.Keccak256Hash(
 		common.LeftPadBytes(big.NewInt(int64(bridge_pb.ActionId_complete_transfer.Number())).Bytes(), 32),
 		txIdBytes,
 		common.LeftPadBytes(big.NewInt(int64(operationId)).Bytes(), 32),
 		ethToken,
-		relayer,
 		recipient,
+		relayer,
 		common.LeftPadBytes(big.NewInt(int64(amount)).Bytes(), 32),
 		common.LeftPadBytes(big.NewInt(int64(payment)).Bytes(), 32),
-		[]byte(metadataStr),
+		metadataBytes,
 		ethContractAddress.Bytes(),
 		common.LeftPadBytes(big.NewInt(int64(expiration)).Bytes(), 32),
 		common.LeftPadBytes(big.NewInt(int64(chainId)).Bytes(), 4),
 	)
 
+	fmt.Printf("Calculated hash: %x\n", hash.Bytes())
+
 	prefixedHash := crypto.Keccak256Hash(
 		[]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%v", len(hash))),
 		hash.Bytes(),
 	)
+
+	fmt.Printf("Prefixed hash: %x\n", prefixedHash.Bytes())
 
 	return hash, prefixedHash
 }
