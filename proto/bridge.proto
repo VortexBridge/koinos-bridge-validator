@@ -37,6 +37,9 @@ message transaction {
     transaction_status status = 15;
     string completion_transaction_id = 16;
     string to_chain = 17;
+    string metadata = 18;
+    string relayer = 19;
+    string payment = 20;
 }
 
 enum action_id {
@@ -55,11 +58,14 @@ message complete_transfer_hash {
     action_id action = 1;
     bytes transaction_id = 2;
     bytes token = 3;
-    bytes recipient = 4;
-    uint64 amount = 5;
-    bytes contract_id = 6;
-    uint64 expiration = 7;
-    uint32 chain = 8;
+    bytes relayer = 4;
+    bytes recipient = 5;
+    uint64 amount = 6;
+    uint64 payment = 7;
+    string metadata = 8;
+    bytes contract_id = 9;
+    uint64 expiration = 10;
+    uint32 chain = 11;
 }
 
 message submitted_signature {

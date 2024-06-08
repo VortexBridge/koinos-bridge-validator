@@ -429,6 +429,9 @@ func processKoinosTokensLockedEvent(
 	koinosToken := base58.Encode(tokensLockedEvent.Token)
 	amount := tokensLockedEvent.Amount
 	recipient := common.HexToAddress(tokensLockedEvent.Recipient)
+	relayerStr := fmt.Sprint(tokensLockedEvent.Relayer)
+	metadataStr := fmt.Sprint(tokensLockedEvent.Metadata)
+	paymenttStr := fmt.Sprint(tokensLockedEvent.Payment)
 	blocktime := block.Block.Header.Timestamp
 	amountStr := fmt.Sprint(tokensLockedEvent.Amount)
 	chainId := tokensLockedEvent.ChainId

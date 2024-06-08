@@ -257,12 +257,36 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		relayer, err := base58.Decode(submittedSignature.Transaction.Relayer)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid relayer"))
+			return
+		}
+
+		payment, err := base58.Decode(submittedSignature.Transaction.Payment)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid payment"))
+			return
+		}
+
+		metadata, err := base58.Decode(submittedSignature.Transaction.Metadata)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid metadata"))
+			return
+		}
+
 		completeTransferHash := &bridge_pb.CompleteTransferHash{
 			Action:        bridge_pb.ActionId_complete_transfer,
 			TransactionId: txIdBytes,
 			Token:         koinosToken,
+			Relayer:       relayer,
 			Recipient:     recipient,
 			Amount:        amount,
+			Payment:       payment,
+			Metadata:      metadata,
 			ContractId:    api.koinosContractAddress,
 			Expiration:    submittedSignature.Transaction.Expiration,
 			Chain:         chain,
