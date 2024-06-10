@@ -72,9 +72,11 @@ message tokens_locked_event {
     bytes from = 1;
     bytes token = 2;
     string amount = 3;
-    string recipient = 4;
-    uint64 blocktime = 5;
-    uint32 chain_id = 6;
+    string payment = 4;
+    string relayer = 5;
+    string recipient = 6;
+    string metadata = 7;
+    uint32 chain_id = 8;
 }
   
 message transfer_completed_event {
