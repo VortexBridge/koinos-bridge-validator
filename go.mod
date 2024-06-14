@@ -14,7 +14,6 @@ require (
 	github.com/btcsuite/btcd v0.22.1
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/dgraph-io/badger/v3 v3.2103.2
-	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/koinos/koinos-proto-golang v1.0.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.1.0
