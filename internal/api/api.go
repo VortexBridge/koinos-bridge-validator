@@ -52,6 +52,7 @@ func NewApi(ethTxStore *store.TransactionsStore, koinosTxStore *store.Transactio
 }
 
 func (api *Api) GetEthereumTransaction(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*") // cors
 	if r.Method != "GET" {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad Request"))
@@ -93,6 +94,7 @@ func (api *Api) GetEthereumTransaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *Api) GetKoinosTransaction(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*") // cors
 	if r.Method != "GET" {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad Request"))
@@ -257,18 +259,24 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		recipient, err := base58.Decode(submittedSignature.Transaction.Recipient)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid recipient"))
-			return
+		recipient := []byte("")
+		if submittedSignature.Transaction.Recipient != "" {
+			recipient, err = base58.Decode(submittedSignature.Transaction.Recipient)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Invalid recipient"))
+				return
+			}
 		}
 
-		relayer, err := base58.Decode(submittedSignature.Transaction.Relayer)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid relayer"))
-			return
+		relayer := []byte("")
+		if submittedSignature.Transaction.Relayer != "" {
+			relayer, err = base58.Decode(submittedSignature.Transaction.Relayer)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Invalid relayer"))
+				return
+			}
 		}
 
 		completeTransferHash := &bridge_pb.CompleteTransferHash{

@@ -48,7 +48,7 @@ func StreamEthereumBlocks(
 	ethPollingTime uint,
 ) {
 	defer wg.Done()
-	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,string,uint256,uint32)"))
+	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,uint256,string,string,string,uint256,uint32)"))
 	tokensLockedEventAbiStr := `[{
 		"anonymous": false,
 		"inputs": [
@@ -616,16 +616,22 @@ func processEthereumTokensLockedEvent(
 		panic(err)
 	}
 
-	recipient, err := base58.Decode(event.Recipient)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
+	recipient := []byte("")
+	if event.Recipient != "" {
+		recipient, err = base58.Decode(event.Recipient)
+		if err != nil {
+			log.Error(err.Error())
+			panic(err)
+		}
 	}
 
-	relayer, err := base58.Decode(event.Relayer)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
+	relayer := []byte("")
+	if event.Relayer != "" {
+		relayer, err = base58.Decode(event.Relayer)
+		if err != nil {
+			log.Error(err.Error())
+			panic(err)
+		}
 	}
 
 	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | relayer: %s | amount: %s | payment: %s | metadata: %s | chain: %d", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Relayer, event.Amount.String(), event.Payment.String(), event.Metadata, chain)
