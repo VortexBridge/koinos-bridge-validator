@@ -196,7 +196,6 @@ func processRequestNewSignaturesEvent(
 
 	transactionId := requestNewSignaturesEvent.TransactionId
 	operationId := requestNewSignaturesEvent.OperationId
-
 	blocktime := block.Block.Header.Timestamp
 	newExpiration := blocktime + uint64(signaturesExpiration)
 
@@ -234,6 +233,7 @@ func processRequestNewSignaturesEvent(
 		if blocktime >= allowedRequestNewSignaturesBlockTime {
 			ethereumToken := common.HexToAddress(koinosTx.EthToken)
 			recipient := common.HexToAddress(koinosTx.Recipient)
+			relayer := common.HexToAddress(koinosTx.Relayer)
 			txId := common.FromHex(koinosTx.Id)
 
 			opId, err := strconv.ParseUint(koinosTx.OpId, 0, 64)
@@ -249,7 +249,7 @@ func processRequestNewSignaturesEvent(
 			}
 
 			// sign the transaction
-			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), recipient.Bytes(), koinosTx.Amount, ethereumContractAddr, newExpiration, chain)
+			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, opId, ethereumToken.Bytes(), recipient.Bytes(), relayer.Bytes(), koinosTx.Payment, koinosTx.Amount, ethereumContractAddr, koinosTx.Metadata, newExpiration, chain)
 
 			sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 			sigHex := "0x" + common.Bytes2Hex(sigBytes)
@@ -283,7 +283,7 @@ func processRequestNewSignaturesEvent(
 
 			koinosTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
-			if len(koinosTx.Signatures) >= ((((len(validators)/2)*10)/3)*2)/10+1 {
+			if len(koinosTx.Signatures) >= ((((len(validators)/7)*20)/5)*6)/12+3 {
 				koinosTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
@@ -428,20 +428,24 @@ func processKoinosTokensLockedEvent(
 	from := base58.Encode(tokensLockedEvent.From)
 	koinosToken := base58.Encode(tokensLockedEvent.Token)
 	amount := tokensLockedEvent.Amount
+	payment := tokensLockedEvent.Payment
+	relayer := common.HexToAddress(tokensLockedEvent.Relayer)
 	recipient := common.HexToAddress(tokensLockedEvent.Recipient)
 	blocktime := block.Block.Header.Timestamp
 	amountStr := fmt.Sprint(tokensLockedEvent.Amount)
+	paymentStr := fmt.Sprint(tokensLockedEvent.Payment)
+	metadata := tokensLockedEvent.Metadata
 	chainId := tokensLockedEvent.ChainId
 	chainIdStr := fmt.Sprint(chainId)
 
 	ethereumToken := common.HexToAddress(tokenAddresses[koinosToken].EthereumAddress)
 
-	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | amount: %s | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, amountStr, chainIdStr)
+	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | relayer: %s | payment: %s | amount: %s | metadata: %s  | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, tokensLockedEvent.Relayer, paymentStr, amountStr, tokensLockedEvent.Metadata, chainIdStr)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 
 	// sign the transaction
-	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), amount, ethereumContractAddr, expiration, uint64(chainId))
+	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), relayer.Bytes(), payment, amount, ethereumContractAddr, metadata, expiration, uint64(chainId))
 
 	sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
 	sigHex := "0x" + common.Bytes2Hex(sigBytes)
@@ -477,9 +481,12 @@ func processKoinosTokensLockedEvent(
 	koinosTx.EthToken = tokenAddresses[koinosToken].EthereumAddress
 	koinosTx.KoinosToken = koinosToken
 	koinosTx.Amount = amountStr
+	koinosTx.Payment = paymentStr
 	koinosTx.Recipient = recipient.Hex()
+	koinosTx.Relayer = relayer.Hex()
 	koinosTx.Hash = prefixedHash.Hex()
 	koinosTx.BlockNumber = blockNumber
+	koinosTx.Metadata = metadata
 	koinosTx.BlockTime = blocktime
 	koinosTx.Expiration = expiration
 	koinosTx.ToChain = chainIdStr

@@ -228,6 +228,13 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		payment, err := strconv.ParseUint(submittedSignature.Transaction.Payment, 0, 64)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid payment"))
+			return
+		}
+
 		chain64, err := strconv.ParseUint(submittedSignature.Transaction.ToChain, 0, 32)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -257,13 +264,23 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		relayer, err := base58.Decode(submittedSignature.Transaction.Relayer)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid relayer"))
+			return
+		}
+
 		completeTransferHash := &bridge_pb.CompleteTransferHash{
 			Action:        bridge_pb.ActionId_complete_transfer,
 			TransactionId: txIdBytes,
 			Token:         koinosToken,
 			Recipient:     recipient,
+			Relayer:       relayer,
 			Amount:        amount,
+			Payment:       payment,
 			ContractId:    api.koinosContractAddress,
+			Metadata:      submittedSignature.Transaction.Metadata,
 			Expiration:    submittedSignature.Transaction.Expiration,
 			Chain:         chain,
 		}
@@ -411,6 +428,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		txIdBytes := common.FromHex(submittedSignature.Transaction.Id)
 
 		amount := submittedSignature.Transaction.Amount
+		payment := submittedSignature.Transaction.Payment
 
 		ethToken := common.FromHex(submittedSignature.Transaction.EthToken)
 		if err != nil {
@@ -423,6 +441,13 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Invalid recipient"))
+			return
+		}
+
+		relayer := common.FromHex(submittedSignature.Transaction.Relayer)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid relayer"))
 			return
 		}
 
@@ -441,7 +466,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(err.Error()))
 			return
 		} else {
-			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txIdBytes, operationId, ethToken, recipient, amount, api.ethContractAddress, submittedSignature.Transaction.Expiration, chainId)
+			_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txIdBytes, operationId, ethToken, recipient, relayer, payment, amount, api.ethContractAddress, submittedSignature.Transaction.Metadata, submittedSignature.Transaction.Expiration, chainId)
 
 			if prefixedHash.Hex() != submittedSignature.Transaction.Hash {
 				errMsg := fmt.Sprintf("the calulated hash for tx %s is different than the one received %s != calculated %s", submittedSignature.Transaction.Id, submittedSignature.Transaction.Hash, prefixedHash.Hex())

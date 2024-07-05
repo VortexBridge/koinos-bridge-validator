@@ -30,13 +30,16 @@ message transaction {
     string eth_token = 8;
     string koinos_token = 9;
     string amount = 10;
-    string recipient = 11;
-    string hash = 12;
-    repeated string validators = 13;
-    repeated string signatures = 14;
-    transaction_status status = 15;
-    string completion_transaction_id = 16;
-    string to_chain = 17;
+    string payment = 11;
+    string relayer = 12;
+    string recipient = 13;
+    string hash = 14;
+    string metadata = 15;
+    repeated string validators = 16;
+    repeated string signatures = 17;
+    transaction_status status = 18;
+    string completion_transaction_id = 19;
+    string to_chain = 20;
 }
 
 enum action_id {
@@ -56,10 +59,13 @@ message complete_transfer_hash {
     bytes transaction_id = 2;
     bytes token = 3;
     bytes recipient = 4;
-    uint64 amount = 5;
-    bytes contract_id = 6;
-    uint64 expiration = 7;
-    uint32 chain = 8;
+    bytes relayer = 5;
+    uint64 amount = 6;
+    uint64 payment = 7;
+    string metadata = 8;
+    bytes contract_id = 9;
+    uint64 expiration = 10;
+    uint32 chain = 11;
 }
 
 message submitted_signature {

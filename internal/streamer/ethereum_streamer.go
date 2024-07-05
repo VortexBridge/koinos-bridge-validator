@@ -70,10 +70,28 @@ func StreamEthereumBlocks(
 			"name": "amount",
 			"type": "uint256"
 		  },
+			{
+			"indexed": false,
+			"internalType": "uint256",
+			"name": "payment",
+			"type": "uint256"
+		  },
+			{
+			"indexed": false,
+			"internalType": "string",
+			"name": "relayer",
+			"type": "string"
+		  },
 		  {
 			"indexed": false,
 			"internalType": "string",
 			"name": "recipient",
+			"type": "string"
+		  },
+			{
+			"indexed": false,
+			"internalType": "string",
+			"name": "metadata",
 			"type": "string"
 		  },
 		  {
@@ -361,7 +379,19 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
+			relayer, err := base58.Decode(ethTx.Relayer)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+
 			amount, err := strconv.ParseUint(ethTx.Amount, 0, 64)
+			if err != nil {
+				log.Error(err.Error())
+				panic(err)
+			}
+
+			payment, err := strconv.ParseUint(ethTx.Payment, 0, 64)
 			if err != nil {
 				log.Error(err.Error())
 				panic(err)
@@ -377,9 +407,12 @@ func processEthereumRequestNewSignaturesEvent(
 				Action:        bridge_pb.ActionId_complete_transfer,
 				TransactionId: txId,
 				Token:         koinosToken,
+				Relayer:       relayer,
 				Recipient:     recipient,
 				Amount:        amount,
+				Payment:       payment,
 				ContractId:    koinosContractAddr,
+				Metadata:      ethTx.Metadata,
 				Expiration:    newExpiration,
 				Chain:         uint32(chain),
 			}
@@ -465,7 +498,7 @@ func processEthereumRequestNewSignaturesEvent(
 			}
 
 			if ethTx.Status != bridge_pb.TransactionStatus_completed &&
-				len(ethTx.Signatures) >= ((((len(validators)/2)*10)/3)*2)/10+1 {
+				len(ethTx.Signatures) >= ((((len(validators)/7)*20)/5)*6)/12+3 {
 				ethTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
@@ -551,7 +584,10 @@ func processEthereumTokensLockedEvent(
 	event := struct {
 		Token     common.Address
 		From      common.Address
+		Metadata  string
+		Relayer   string
 		Recipient string
+		Payment   *big.Int
 		Amount    *big.Int
 		Blocktime *big.Int
 		Chain     uint32
@@ -569,7 +605,9 @@ func processEthereumTokensLockedEvent(
 	ethFrom := event.From.Hex()
 	ethToken := event.Token.Hex()
 	amount := event.Amount.Uint64()
+	payment := event.Payment.Uint64()
 	blocktime := event.Blocktime.Uint64()
+	metadata := event.Metadata
 	chain := event.Chain
 
 	koinosToken, err := base58.Decode(tokenAddresses[ethToken].KoinosAddress)
@@ -584,7 +622,13 @@ func processEthereumTokensLockedEvent(
 		panic(err)
 	}
 
-	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | amount: %s  | chain: %d", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Amount.String(), chain)
+	relayer, err := base58.Decode(event.Relayer)
+	if err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+
+	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | relayer: %s | amount: %s | payment: %s | metadata: %s | chain: %d", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Relayer, event.Amount.String(), event.Payment.String(), event.Metadata, chain)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 
@@ -594,9 +638,12 @@ func processEthereumTokensLockedEvent(
 		TransactionId: txId,
 		Token:         koinosToken,
 		Recipient:     recipient,
+		Relayer:       relayer,
 		Amount:        amount,
+		Payment:       payment,
 		ContractId:    koinosContractAddr,
 		Expiration:    expiration,
+		Metadata:      metadata,
 		Chain:         chain,
 	}
 
@@ -642,8 +689,11 @@ func processEthereumTokensLockedEvent(
 	ethTx.EthToken = ethToken
 	ethTx.KoinosToken = tokenAddresses[ethToken].KoinosAddress
 	ethTx.Amount = event.Amount.String()
+	ethTx.Payment = event.Payment.String()
 	ethTx.Recipient = event.Recipient
+	ethTx.Relayer = event.Relayer
 	ethTx.Hash = hashB64
+	ethTx.Metadata = event.Metadata
 	ethTx.BlockNumber = vLog.BlockNumber
 	ethTx.BlockTime = blocktime
 	ethTx.Expiration = expiration
