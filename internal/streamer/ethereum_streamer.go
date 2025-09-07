@@ -611,7 +611,7 @@ func processEthereumTokensLockedEvent(
 	chain := event.Chain
 
 	// normalize the EVM token address
-	addrKey := strings.ToLower(ethToken.Hex())
+	addrKey := strings.ToLower(ethToken)
 	tokenInfo, ok := tokenAddresses[addrKey]
 	if !ok {
 		err := fmt.Errorf("token %s no configurado en tokenAddresses", addrKey)
