@@ -610,7 +610,22 @@ func processEthereumTokensLockedEvent(
 	metadata := event.Metadata
 	chain := event.Chain
 
-	koinosToken, err := base58.Decode(tokenAddresses[ethToken].KoinosAddress)
+	// normalize the EVM token address
+	addrKey := strings.ToLower(ethToken.Hex())
+	tokenInfo, ok := tokenAddresses[addrKey]
+	if !ok {
+		err := fmt.Errorf("token %s no configurado en tokenAddresses", addrKey)
+		log.Error(err.Error())
+		panic(err)
+	}
+	
+	if tokenInfo.KoinosAddress == "" {
+		err := fmt.Errorf("token %s no tiene KoinosAddress configurado", addrKey)
+		log.Error(err.Error())
+		panic(err)
+	}
+
+	koinosToken, err := base58.Decode(tokenInfo.KoinosAddress)
 	if err != nil {
 		log.Error(err.Error())
 		panic(err)

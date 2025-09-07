@@ -438,7 +438,21 @@ func processKoinosTokensLockedEvent(
 	chainId := tokensLockedEvent.ChainId
 	chainIdStr := fmt.Sprint(chainId)
 
-	ethereumToken := common.HexToAddress(tokenAddresses[koinosToken].EthereumAddress)
+	// normalize the Koinos token address
+	tokenInfo, ok := tokenAddresses[koinosToken]
+	if tokenInfo.EthereumAddress == "" {
+		err := fmt.Errorf("token %s no tiene EthereumAddress configurado", koinosToken)
+		log.Error(err.Error())
+		panic(err)
+	}
+	
+	if !common.IsHexAddress(tokenInfo.EthereumAddress) {
+		err := fmt.Errorf("EthereumAddress inválido para token %s: %s", koinosToken, tokenInfo.EthereumAddress)
+		log.Error(err.Error())
+		panic(err)
+	}
+
+	ethereumToken := common.HexToAddress(tokenInfo.EthereumAddress)
 
 	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | relayer: %s | payment: %s | amount: %s | metadata: %s  | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, tokensLockedEvent.Relayer, paymentStr, amountStr, tokensLockedEvent.Metadata, chainIdStr)
 
