@@ -440,6 +440,12 @@ func processKoinosTokensLockedEvent(
 
 	// normalize the Koinos token address
 	tokenInfo, ok := tokenAddresses[koinosToken]
+	if !ok {
+		err := fmt.Errorf("token %s no configurado en tokenAddresses", koinosToken)
+		log.Error(err.Error())
+		panic(err)
+	}
+	
 	if tokenInfo.EthereumAddress == "" {
 		err := fmt.Errorf("token %s no tiene EthereumAddress configurado", koinosToken)
 		log.Error(err.Error())
@@ -454,7 +460,7 @@ func processKoinosTokensLockedEvent(
 
 	ethereumToken := common.HexToAddress(tokenInfo.EthereumAddress)
 
-	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | relayer: %s | payment: %s | amount: %s | metadata: %s  | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenAddresses[koinosToken].EthereumAddress, from, tokensLockedEvent.Recipient, tokensLockedEvent.Relayer, paymentStr, amountStr, tokensLockedEvent.Metadata, chainIdStr)
+	log.Infof("new Koinos tokens_locked_event | block: %d | tx: %s | op_id: %s | Koinos token: %s | Ethereum token: %s | From: %s | recipient: %s | relayer: %s | payment: %s | amount: %s | metadata: %s  | chain: %s", blockNumber, txIdHex, operationIdStr, koinosToken, tokenInfo.EthereumAddress, from, tokensLockedEvent.Recipient, tokensLockedEvent.Relayer, paymentStr, amountStr, tokensLockedEvent.Metadata, chainIdStr)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 

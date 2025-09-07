@@ -649,7 +649,7 @@ func processEthereumTokensLockedEvent(
 		}
 	}
 
-	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | relayer: %s | amount: %s | payment: %s | metadata: %s | chain: %d", blockNumber, txIdHex, ethToken, tokenAddresses[ethToken].KoinosAddress, ethFrom, event.Recipient, event.Relayer, event.Amount.String(), event.Payment.String(), event.Metadata, chain)
+	log.Infof("new Eth TokensLockedEvent | block: %s | tx: %s | ETH token: %s | Koinos token: %s | From: %s | recipient: %s | relayer: %s | amount: %s | payment: %s | metadata: %s | chain: %d", blockNumber, txIdHex, ethToken, tokenInfo.KoinosAddress, ethFrom, event.Recipient, event.Relayer, event.Amount.String(), event.Payment.String(), event.Metadata, chain)
 
 	expiration := blocktime + uint64(signaturesExpiration)
 
@@ -708,7 +708,7 @@ func processEthereumTokensLockedEvent(
 	ethTx.Id = txIdHex
 	ethTx.From = ethFrom
 	ethTx.EthToken = ethToken
-	ethTx.KoinosToken = tokenAddresses[ethToken].KoinosAddress
+	ethTx.KoinosToken = tokenInfo.KoinosAddress
 	ethTx.Amount = event.Amount.String()
 	ethTx.Payment = event.Payment.String()
 	ethTx.Recipient = event.Recipient

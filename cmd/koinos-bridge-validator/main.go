@@ -114,7 +114,8 @@ func main() {
 
 	for _, tokenAddr := range yamlConfig.Bridge.Tokens {
 		tokenAddresses[tokenAddr.KoinosAddress] = tokenAddr
-		tokenAddresses[tokenAddr.EthereumAddress] = tokenAddr
+		// Normalize Ethereum address to lowercase for consistent lookup
+		tokenAddresses[strings.ToLower(tokenAddr.EthereumAddress)] = tokenAddr
 	}
 
 	appID := fmt.Sprintf("%s.%s", appName, instanceID)
