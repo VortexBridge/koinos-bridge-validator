@@ -374,8 +374,8 @@ func processEthereumRequestNewSignaturesEvent(
 			}
 
 			recipient := []byte("")
-			if event.Recipient != "" {
-				recipient, err := base58.Decode(event.Recipient)
+			if ethTx.Recipient != "" {
+				recipient, err = base58.Decode(ethTx.Recipient)
 				if err != nil {
 					log.Error(err.Error())
 					panic(err)
@@ -384,7 +384,7 @@ func processEthereumRequestNewSignaturesEvent(
 
 			relayer := []byte("")
 			if ethTx.Relayer != "" {
-				relayer, err := base58.Decode(ethTx.Relayer)
+				relayer, err = base58.Decode(ethTx.Relayer)
 				if err != nil {
 					log.Error(err.Error())
 					panic(err)
