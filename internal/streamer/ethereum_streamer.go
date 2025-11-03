@@ -373,16 +373,22 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
-			recipient, err := base58.Decode(ethTx.Recipient)
-			if err != nil {
-				log.Error(err.Error())
-				panic(err)
+			recipient := []byte("")
+			if event.Recipient != "" {
+				recipient, err := base58.Decode(event.Recipient)
+				if err != nil {
+					log.Error(err.Error())
+					panic(err)
+				}
 			}
 
-			relayer, err := base58.Decode(ethTx.Relayer)
-			if err != nil {
-				log.Error(err.Error())
-				panic(err)
+			relayer := []byte("")
+			if ethTx.Relayer != "" {
+				relayer, err := base58.Decode(ethTx.Relayer)
+				if err != nil {
+					log.Error(err.Error())
+					panic(err)
+				}
 			}
 
 			amount, err := strconv.ParseUint(ethTx.Amount, 0, 64)
