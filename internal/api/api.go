@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"strconv"
 	"time"
@@ -38,6 +39,10 @@ func NewApi(ethTxStore *store.TransactionsStore, koinosTxStore *store.Transactio
 	if err != nil {
 		log.Error(err.Error())
 		panic(err)
+	}
+
+	if common.IsHexAddress(ethAddress) {
+		ethAddress = common.HexToAddress(ethAddress).Hex()
 	}
 
 	return &Api{
@@ -166,11 +171,11 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var submittedSignature bridge_pb.SubmittedSignature
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := ioutil.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
 
-	if err != nil {
+	if err != nil || len(body) > 1<<20 {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Invalid body"))
+		w.Write([]byte("Invalid or oversized body"))
 		return
 	}
 
@@ -182,9 +187,25 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if time.Now().UnixMilli() > submittedSignature.Expiration {
+	now := time.Now().UnixMilli()
+	tx := submittedSignature.Transaction
+	if tx == nil || (tx.Type != bridge_pb.TransactionType_ethereum && tx.Type != bridge_pb.TransactionType_koinos) || tx.Expiration <= uint64(now) {
+		http.Error(w, "Missing, unknown or expired transfer", http.StatusBadRequest)
+		return
+	}
+	for _, value := range []string{tx.Amount, tx.Payment} {
+		if _, err := strconv.ParseUint(value, 0, 64); err != nil {
+			http.Error(w, "Invalid transfer amount or payment", http.StatusBadRequest)
+			return
+		}
+	}
+	if _, err := strconv.ParseUint(tx.ToChain, 0, 32); err != nil {
+		http.Error(w, "Invalid transfer chain", http.StatusBadRequest)
+		return
+	}
+	if now >= submittedSignature.Expiration || submittedSignature.Expiration > now+120000 {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Expired signature"))
+		w.Write([]byte("Invalid signature expiry"))
 		return
 	}
 
@@ -209,8 +230,13 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, found := api.validators[signer]
-	if !found {
+	authorized := false
+	for _, validator := range api.validators {
+		if validator.KoinosAddress == signer {
+			authorized = true
+		}
+	}
+	if !authorized {
 		errMsg := fmt.Sprintf("signer %s is not allowed", signer)
 		log.Errorf(errMsg)
 		w.WriteHeader(http.StatusBadRequest)
@@ -317,34 +343,10 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// check signatures
-		for index, signature := range submittedSignature.Transaction.Signatures {
-			validatorReceived := submittedSignature.Transaction.Validators[index]
-
-			_, found := api.validators[validatorReceived]
-			if !found {
-				errMsg := fmt.Sprintf("validator %s is not allowed", validatorReceived)
-				log.Errorf(errMsg)
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(errMsg))
-				return
-			}
-
-			validatorCalculated, err := util.RecoverKoinosAddressFromSignature(signature, hash[:])
-			if err != nil {
-				log.Error(err.Error())
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("cannot recover validator address"))
-				return
-			}
-
-			if validatorReceived != validatorCalculated {
-				errMsg := fmt.Sprintf("the signature provided for validator %s does not match the address recovered %s", validatorReceived, validatorCalculated)
-				log.Errorf(errMsg)
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(errMsg))
-				return
-			}
+		incomingSignatures, err := util.VerifyTransferSignatures(submittedSignature.Transaction, api.validators)
+		if err != nil {
+			http.Error(w, "Invalid, duplicate or unconfigured transfer signatures", http.StatusBadRequest)
+			return
 		}
 
 		// check if we already have this transaction in our store
@@ -361,12 +363,14 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		response := ""
 
 		if ethTx != nil {
+			storedSignatures, verifyErr := util.VerifyTransferSignatures(ethTx, api.validators)
+			if verifyErr != nil {
+				api.ethTxStore.Unlock()
+				http.Error(w, "Stored signature evidence requires local recovery", http.StatusConflict)
+				return
+			}
 			if ethTx.Status == bridge_pb.TransactionStatus_completed {
-				for index, validatr := range ethTx.Validators {
-					if validatr == api.koinosAddress {
-						response = ethTx.Signatures[index]
-					}
-				}
+				response = storedSignatures[api.koinosAddress]
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(response))
 				api.ethTxStore.Unlock()
@@ -383,32 +387,30 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			signatures := make(map[string]string)
-
-			for index, validatr := range ethTx.Validators {
-				signatures[validatr] = ethTx.Signatures[index]
-
-				if validatr == api.koinosAddress {
-					response = ethTx.Signatures[index]
+			signatures := storedSignatures
+			response = signatures[api.koinosAddress]
+			for val, sig := range incomingSignatures {
+				if _, found := signatures[val]; !found {
+					signatures[val] = sig
 				}
 			}
-
-			for index, validatr := range submittedSignature.Transaction.Validators {
-				_, found := signatures[validatr]
-				if !found {
-					signatures[validatr] = submittedSignature.Transaction.Signatures[index]
-				}
-			}
-
-			ethTx.Validators = []string{}
-			ethTx.Signatures = []string{}
+			ethTx.Validators = nil
+			ethTx.Signatures = nil
 			for val, sig := range signatures {
 				ethTx.Validators = append(ethTx.Validators, val)
 				ethTx.Signatures = append(ethTx.Signatures, sig)
 			}
 		} else {
-			ethTx = submittedSignature.Transaction
+			ethTx = proto.Clone(submittedSignature.Transaction).(*bridge_pb.Transaction)
+			ethTx.Validators = nil
+			ethTx.Signatures = nil
+			for val, sig := range incomingSignatures {
+				ethTx.Validators = append(ethTx.Validators, val)
+				ethTx.Signatures = append(ethTx.Signatures, sig)
+			}
 		}
+		ethTx.CompletionTransactionId = ""
+		ethTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
 		if len(ethTx.Signatures) >= ((((len(api.validators)/2)*10)/3)*2)/10+1 {
 			ethTx.Status = bridge_pb.TransactionStatus_signed
@@ -490,34 +492,10 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// check signatures
-			for index, signature := range submittedSignature.Transaction.Signatures {
-				validatorReceived := submittedSignature.Transaction.Validators[index]
-
-				_, found := api.validators[validatorReceived]
-				if !found {
-					errMsg := fmt.Sprintf("validator %s is not allowed", validatorReceived)
-					log.Errorf(errMsg)
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(errMsg))
-					return
-				}
-
-				recoveredAddr, err := util.RecoverEthereumAddressFromSignature(signature, prefixedHash.Bytes())
-
-				if err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte("cannot recover validator address"))
-					return
-				}
-
-				if validatorReceived != recoveredAddr {
-					errMsg := fmt.Sprintf("the signature provided for validator %s does not match the address recovered %s", validatorReceived, recoveredAddr)
-					log.Errorf(errMsg)
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(errMsg))
-					return
-				}
+			incomingSignatures, err := util.VerifyTransferSignatures(submittedSignature.Transaction, api.validators)
+			if err != nil {
+				http.Error(w, "Invalid, duplicate or unconfigured transfer signatures", http.StatusBadRequest)
+				return
 			}
 
 			// check if we already have this transaction in our store
@@ -535,12 +513,14 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			response := ""
 
 			if koinosTx != nil {
+				storedSignatures, verifyErr := util.VerifyTransferSignatures(koinosTx, api.validators)
+				if verifyErr != nil {
+					api.koinosTxStore.Unlock()
+					http.Error(w, "Stored signature evidence requires local recovery", http.StatusConflict)
+					return
+				}
 				if koinosTx.Status == bridge_pb.TransactionStatus_completed {
-					for index, validatr := range koinosTx.Validators {
-						if validatr == api.ethAddress {
-							response = koinosTx.Signatures[index]
-						}
-					}
+					response = storedSignatures[api.ethAddress]
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte(response))
 					api.koinosTxStore.Unlock()
@@ -557,32 +537,30 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				signatures := make(map[string]string)
-
-				for index, validatr := range koinosTx.Validators {
-					signatures[validatr] = koinosTx.Signatures[index]
-
-					if validatr == api.ethAddress {
-						response = koinosTx.Signatures[index]
+				signatures := storedSignatures
+				response = signatures[api.ethAddress]
+				for val, sig := range incomingSignatures {
+					if _, found := signatures[val]; !found {
+						signatures[val] = sig
 					}
 				}
-
-				for index, validatr := range submittedSignature.Transaction.Validators {
-					_, found := signatures[validatr]
-					if !found {
-						signatures[validatr] = submittedSignature.Transaction.Signatures[index]
-					}
-				}
-
-				koinosTx.Validators = []string{}
-				koinosTx.Signatures = []string{}
+				koinosTx.Validators = nil
+				koinosTx.Signatures = nil
 				for val, sig := range signatures {
 					koinosTx.Validators = append(koinosTx.Validators, val)
 					koinosTx.Signatures = append(koinosTx.Signatures, sig)
 				}
 			} else {
-				koinosTx = submittedSignature.Transaction
+				koinosTx = proto.Clone(submittedSignature.Transaction).(*bridge_pb.Transaction)
+				koinosTx.Validators = nil
+				koinosTx.Signatures = nil
+				for val, sig := range incomingSignatures {
+					koinosTx.Validators = append(koinosTx.Validators, val)
+					koinosTx.Signatures = append(koinosTx.Signatures, sig)
+				}
 			}
+			koinosTx.CompletionTransactionId = ""
+			koinosTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
 			if len(koinosTx.Signatures) >= ((((len(api.validators)/2)*10)/3)*2)/10+1 {
 				koinosTx.Status = bridge_pb.TransactionStatus_signed

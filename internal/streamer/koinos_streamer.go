@@ -263,6 +263,11 @@ func processRequestNewSignaturesEvent(
 	}
 
 	if koinosTx != nil && koinosTx.Status != bridge_pb.TransactionStatus_completed {
+		if _, err := util.VerifyTransferSignatures(koinosTx, validators); err != nil {
+			koinosTxStore.Unlock()
+			log.Errorf("Refusing renewal of invalid stored signature evidence: %v", err)
+			return
+		}
 		// can only request signatures after 2x expiration time
 		allowedRequestNewSignaturesBlockTime := koinosTx.Expiration + uint64(signaturesExpiration)
 
@@ -323,6 +328,12 @@ func processRequestNewSignaturesEvent(
 				koinosTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
+			if _, err := util.VerifyTransferSignatures(koinosTx, validators); err != nil {
+				koinosTxStore.Unlock()
+				log.Errorf("Refusing invalid transfer signature evidence: %v", err)
+				return
+			}
+
 			err = koinosTxStore.Put(txKey, koinosTx)
 
 			if err != nil {
@@ -335,13 +346,6 @@ func processRequestNewSignaturesEvent(
 			// broadcast transaction
 			koinosSignatures, _ := util.BroadcastTransaction(koinosTx, koinosPK, koinosAddress, validators)
 
-			// the signatures received from the broadcast are mapped using the Koinos validators addresses
-			// remap to Ethereum addresses
-			ethSignatures := make(map[string]string)
-			for val, sig := range koinosSignatures {
-				ethSignatures[validators[val].EthereumAddress] = sig
-			}
-
 			// update the transaction with signatures we may have gotten back from the broadcast
 			koinosTxStore.Lock()
 
@@ -351,18 +355,10 @@ func processRequestNewSignaturesEvent(
 				panic(err)
 			}
 
-			for index, validatr := range koinosTx.Validators {
-				_, found := ethSignatures[validatr]
-				if !found {
-					ethSignatures[validatr] = koinosTx.Signatures[index]
-				}
-			}
-
-			koinosTx.Validators = []string{}
-			koinosTx.Signatures = []string{}
-			for val, sig := range ethSignatures {
-				koinosTx.Validators = append(koinosTx.Validators, val)
-				koinosTx.Signatures = append(koinosTx.Signatures, sig)
+			if err := mergePeerSignatures(koinosTx, koinosSignatures, validators); err != nil {
+				koinosTxStore.Unlock()
+				log.Errorf("Refusing invalid or stale peer signature merge: %v", err)
+				return
 			}
 
 			if koinosTx.Status != bridge_pb.TransactionStatus_completed &&
@@ -533,6 +529,12 @@ func processKoinosTokensLockedEvent(
 		koinosTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 	}
 
+	if _, err := util.VerifyTransferSignatures(koinosTx, validators); err != nil {
+		koinosTxStore.Unlock()
+		log.Errorf("Refusing invalid transfer signature evidence: %v", err)
+		return
+	}
+
 	err = koinosTxStore.Put(txKey, koinosTx)
 
 	if err != nil {
@@ -548,13 +550,6 @@ func processKoinosTokensLockedEvent(
 	// broadcast transaction
 	koinosSignatures, _ := util.BroadcastTransaction(koinosTx, koinosPK, koinosAddress, validators)
 
-	// the signatures received from the broadcast are mapped using the Koinos validators addresses
-	// remap to Ethereum addresses
-	ethSignatures := make(map[string]string)
-	for val, sig := range koinosSignatures {
-		ethSignatures[validators[val].EthereumAddress] = sig
-	}
-
 	// update the transaction with signatures we may have gotten back from the broadcast
 	koinosTxStore.Lock()
 
@@ -564,19 +559,10 @@ func processKoinosTokensLockedEvent(
 		panic(err)
 	}
 
-	// add signatures we may already have
-	for index, validatr := range koinosTx.Validators {
-		_, found := ethSignatures[validatr]
-		if !found {
-			ethSignatures[validatr] = koinosTx.Signatures[index]
-		}
-	}
-
-	koinosTx.Validators = []string{}
-	koinosTx.Signatures = []string{}
-	for val, sig := range ethSignatures {
-		koinosTx.Validators = append(koinosTx.Validators, val)
-		koinosTx.Signatures = append(koinosTx.Signatures, sig)
+	if err := mergePeerSignatures(koinosTx, koinosSignatures, validators); err != nil {
+		koinosTxStore.Unlock()
+		log.Errorf("Refusing invalid or stale peer signature merge: %v", err)
+		return
 	}
 
 	if koinosTx.Status != bridge_pb.TransactionStatus_completed &&

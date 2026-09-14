@@ -585,3 +585,66 @@ reused, existing receipts cannot be overwritten with different content, and a
 exports the current receipt; archived receipts are retained on disk. There is no
 automatic deletion or archive browser yet. These local JSON records are not signed
 remote attestations or protection against restoration of old operator state.
+
+## Transfer signature evidence at the legacy peer boundary
+
+The legacy validator now verifies each successful peer reply against the configured
+peer's destination-chain address and the exact digest of the transfer sent. It
+refuses redirects, closes reply bodies, caps replies at 256 bytes and sends only
+one request per configured peer URL, including on errors. A nonempty HTTP 200
+response alone is no longer accepted as a signature. Broadcasting also rejects
+expired transfers and malformed or unverified attached signature arrays.
+
+`SubmitSignature` checks distinct configured signers and matching signature arrays
+before storage. EVM address case aliases and alternate signature encodings cannot
+increase the signer count. It bounds request bodies to 1 MiB and requires a
+nonexpired transfer plus an authenticated envelope expiring within two minutes.
+The broadcaster's existing one-minute envelope fits this limit. Invalid amount,
+payment, chain and signature inputs return an error rather than entering the
+legacy hash helper with malformed numeric input. A peer cannot set a locally
+stored transfer to completed or supply its completion transaction ID. A completed
+record already held locally retains its completion status.
+
+Both source-event handlers and both renewal handlers validate signature evidence
+before writing it. After a broadcast, they recheck replies against the current
+stored digest under the transaction lock. If another request renewed the transfer
+while HTTP was in progress, replies for the prior digest cannot enter the renewed
+record. Corrupt retained arrays are refused rather than indexed or silently
+repaired. EVM-to-Koinos renewal also preserves the ordinary transfer path's handling
+of empty recipient/relayer fields.
+
+Compatibility follows the reviewed EVM source's `recoverSigner` behavior:
+65-byte signatures, recovery IDs 0/1 or 27/28 and both valid high-S and low-S
+values. The existing signer still emits 27/28 and low-S. Duplicate detection uses
+the recovered address, so equivalent representations cannot add votes. Koinos
+continues using canonical URL-base64 compact signatures and its existing address
+derivation. No protobuf schema, transfer hash preimage, threshold formula or
+contract authority changed. These are source-level checks; deployed bytecode and
+mixed-version interoperability still require their own qualification evidence.
+
+Existing corrupt or formerly accepted invalid records need local investigation.
+The peer API returns HTTP 409 for invalid retained signature evidence. Streamer
+rejections log the error and preserve the stored record; there is no automatic
+repair, replay queue or new operator incident view. Existing public transaction
+reads and process activity counters are not retroactive cryptographic verification
+of every stored record. Do not use them as a rollout quorum permit.
+
+Remaining gates include inconsistent legacy threshold formulas, fresh on-chain
+membership and source/finality verification, and the legacy EVM transfer hash
+helper's signed `int64` conversion for unsigned values at or above 2^63. This
+change does not fix those protocol issues or enable managed signing. Safe rollout
+still needs the full qualification, installation and recovery workflow described
+in the implementation specification.
+
+Regression tests use fresh synthetic keys, in-memory stores and loopback HTTP:
+
+```sh
+go test -count=1 -race ./internal/api ./internal/util ./internal/streamer
+go test -count=1 ./...
+go vet ./...
+```
+
+They cover valid API/broadcaster exchange in both directions, invalid peer replies,
+wrong signer and digest, redirects, body bounds, duplicate identities, malformed
+stored evidence, peer-asserted completion, concurrent renewal during the network
+round trip and valid/refused renewals through both actual event handlers.

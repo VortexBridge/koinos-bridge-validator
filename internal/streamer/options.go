@@ -6,8 +6,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
 	"github.com/koinos-bridge/koinos-bridge-validator/proto/build/github.com/koinos-bridge/koinos-bridge-validator/bridge_pb"
 	"github.com/koinos/koinos-proto-golang/koinos/rpc/block_store"
+	"google.golang.org/protobuf/proto"
 	"time"
 )
 
@@ -114,6 +116,49 @@ func validateEthereumLogs(logs []types.Log, from, to uint64, address common.Addr
 				return fmt.Errorf("unordered or duplicate log in confirmed block range")
 			}
 		}
+	}
+	return nil
+}
+
+// mergePeerSignatures rechecks replies against the current stored transfer after
+// the network round trip. A renewal may have changed its digest while unlocked.
+// It also refuses corrupt retained evidence; failure leaves the record intact.
+// Replies are keyed by the peer's Koinos identity in both directions.
+func mergePeerSignatures(tx *bridge_pb.Transaction, replies map[string]string, validators map[string]util.ValidatorConfig) error {
+	retained, err := util.VerifyTransferSignatures(tx, validators)
+	if err != nil {
+		return err
+	}
+	candidate := proto.Clone(tx).(*bridge_pb.Transaction)
+	candidate.Validators, candidate.Signatures = nil, nil
+	for peer, signature := range replies {
+		address := ""
+		for _, member := range validators {
+			if member.KoinosAddress == peer {
+				address = member.KoinosAddress
+				if tx.Type == bridge_pb.TransactionType_koinos {
+					address = member.EthereumAddress
+				}
+				break
+			}
+		}
+		if address == "" {
+			return fmt.Errorf("unconfigured signature peer")
+		}
+		candidate.Validators = append(candidate.Validators, address)
+		candidate.Signatures = append(candidate.Signatures, signature)
+	}
+	incoming, err := util.VerifyTransferSignatures(candidate, validators)
+	if err != nil {
+		return err
+	}
+	for address, signature := range incoming {
+		retained[address] = signature
+	}
+	tx.Validators, tx.Signatures = nil, nil
+	for address, signature := range retained {
+		tx.Validators = append(tx.Validators, address)
+		tx.Signatures = append(tx.Signatures, signature)
 	}
 	return nil
 }

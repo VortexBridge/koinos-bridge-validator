@@ -5,13 +5,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -162,44 +165,18 @@ func KoinosPublicKeyToAddress(pubkey *btcec.PublicKey) ([]byte, error) {
 	return base58.Decode(mainNetAddr.EncodeAddress())
 }
 
-func RecoverEthereumAddressFromSignature(signature string, prefixedHash []byte) (string, error) {
-	signatureBytes := common.Hex2Bytes(signature[2:])
-
-	signatureBytes[crypto.RecoveryIDOffset] -= 27 // Transform yellow paper V from 27/28 to 0/1
-
-	recovered, err := crypto.SigToPub(prefixedHash, signatureBytes)
-	if err != nil {
-		return "", err
-	}
-
-	recoveredAddr := crypto.PubkeyToAddress(*recovered).Hex()
-
-	return recoveredAddr, nil
-}
-
-func RecoverKoinosAddressFromSignature(signature string, hash []byte) (string, error) {
-	signatureBytes, err := base64.URLEncoding.DecodeString(signature)
-	if err != nil {
-		log.Error(err.Error())
-		return "", err
-	}
-
-	validatorPubKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureBytes, hash[:])
-	if err != nil {
-		log.Error(err.Error())
-		return "", err
-	}
-	validatorAddressBytes, err := KoinosPublicKeyToAddress(validatorPubKey)
-	if err != nil {
-		log.Error(err.Error())
-		return "", err
-	}
-
-	return base58.Encode(validatorAddressBytes), nil
-}
-
 func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddress string, validators map[string]ValidatorConfig) (map[string]string, error) {
 	signatures := make(map[string]string)
+	digest, err := TransferSignatureDigest(tx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := VerifyTransferSignatures(tx, validators); err != nil {
+		return nil, err
+	}
+	if tx.Expiration <= uint64(time.Now().UnixMilli()) {
+		return nil, errors.New("transfer signatures are expired")
+	}
 
 	txBytes, err := proto.Marshal(tx)
 	if err != nil {
@@ -242,6 +219,8 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 			continue
 		}
 
+		processedApiUrls[validator.ApiUrl] = true
+
 		bodyReader := bytes.NewReader(submittedSignatureBytes)
 		req, err := http.NewRequest(http.MethodPost, validator.ApiUrl+"/SubmitSignature", bodyReader)
 
@@ -252,7 +231,8 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 		req.Header.Set("Content-Type", "application/json")
 
 		client := http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("peer redirects are refused") },
 		}
 
 		res, err := client.Do(req)
@@ -262,18 +242,17 @@ func BroadcastTransaction(tx *bridge_pb.Transaction, koinosPK []byte, koinosAddr
 		}
 
 		log.Debugf("broadcast %s: status code %d for tx %s\n", validator.KoinosAddress, res.StatusCode, tx.Id)
-		bodyBytes, _ := ioutil.ReadAll(res.Body)
-		body := string(bodyBytes)
-		if res.StatusCode == http.StatusOK {
-			if body != "" {
-				log.Debugf("client: received signature %s\n", body)
+		bodyBytes, readErr := ioutil.ReadAll(io.LimitReader(res.Body, 257))
+		closeErr := res.Body.Close()
+		if res.StatusCode == http.StatusOK && readErr == nil && closeErr == nil && len(bodyBytes) <= 256 {
+			body := strings.TrimSpace(string(bodyBytes))
+			expected := transferValidatorAddress(tx.Type, validator)
+			recovered, recoveryErr := recoverTransferSigner(tx.Type, body, digest)
+			if expected != "" && recoveryErr == nil && recovered == expected {
 				signatures[validator.KoinosAddress] = body
 			}
-		} else {
-			log.Warnf("client: received error %s\n", body)
 		}
 
-		processedApiUrls[validator.ApiUrl] = true
 	}
 
 	return signatures, nil

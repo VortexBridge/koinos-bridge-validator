@@ -408,6 +408,11 @@ func processEthereumRequestNewSignaturesEvent(
 	}
 
 	if ethTx != nil && ethTx.Status != bridge_pb.TransactionStatus_completed {
+		if _, err := util.VerifyTransferSignatures(ethTx, validators); err != nil {
+			ethTxStore.Unlock()
+			log.Errorf("Refusing renewal of invalid stored signature evidence: %v", err)
+			return
+		}
 		// can only request signatures after 2x expiration time
 		allowedRequestNewSignaturesBlockTime := ethTx.Expiration + uint64(signaturesExpiration)
 
@@ -419,16 +424,22 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
-			recipient, err := base58.Decode(ethTx.Recipient)
-			if err != nil {
-				log.Error(err.Error())
-				panic(err)
+			recipient := []byte{}
+			if ethTx.Recipient != "" {
+				recipient, err = base58.Decode(ethTx.Recipient)
+				if err != nil {
+					log.Error(err.Error())
+					panic(err)
+				}
 			}
 
-			relayer, err := base58.Decode(ethTx.Relayer)
-			if err != nil {
-				log.Error(err.Error())
-				panic(err)
+			relayer := []byte{}
+			if ethTx.Relayer != "" {
+				relayer, err = base58.Decode(ethTx.Relayer)
+				if err != nil {
+					log.Error(err.Error())
+					panic(err)
+				}
 			}
 
 			amount, err := strconv.ParseUint(ethTx.Amount, 0, 64)
@@ -508,6 +519,12 @@ func processEthereumRequestNewSignaturesEvent(
 				ethTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
+			if _, err := util.VerifyTransferSignatures(ethTx, validators); err != nil {
+				ethTxStore.Unlock()
+				log.Errorf("Refusing invalid transfer signature evidence: %v", err)
+				return
+			}
+
 			err = ethTxStore.Put(transactionId, ethTx)
 
 			if err != nil {
@@ -529,18 +546,10 @@ func processEthereumRequestNewSignaturesEvent(
 				panic(err)
 			}
 
-			for index, validatr := range ethTx.Validators {
-				_, found := koinosSignatures[validatr]
-				if !found {
-					koinosSignatures[validatr] = ethTx.Signatures[index]
-				}
-			}
-
-			ethTx.Validators = []string{}
-			ethTx.Signatures = []string{}
-			for val, sig := range koinosSignatures {
-				ethTx.Validators = append(ethTx.Validators, val)
-				ethTx.Signatures = append(ethTx.Signatures, sig)
+			if err := mergePeerSignatures(ethTx, koinosSignatures, validators); err != nil {
+				ethTxStore.Unlock()
+				log.Errorf("Refusing invalid or stale peer signature merge: %v", err)
+				return
 			}
 
 			if ethTx.Status != bridge_pb.TransactionStatus_completed &&
@@ -757,6 +766,12 @@ func processEthereumTokensLockedEvent(
 		ethTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 	}
 
+	if _, err := util.VerifyTransferSignatures(ethTx, validators); err != nil {
+		ethTxStore.Unlock()
+		log.Errorf("Refusing invalid transfer signature evidence: %v", err)
+		return
+	}
+
 	err = ethTxStore.Put(txIdHex, ethTx)
 
 	if err != nil {
@@ -781,18 +796,10 @@ func processEthereumTokensLockedEvent(
 		panic(err)
 	}
 
-	for index, validatr := range ethTx.Validators {
-		_, found := signatures[validatr]
-		if !found {
-			signatures[validatr] = ethTx.Signatures[index]
-		}
-	}
-
-	ethTx.Validators = []string{}
-	ethTx.Signatures = []string{}
-	for val, sig := range signatures {
-		ethTx.Validators = append(ethTx.Validators, val)
-		ethTx.Signatures = append(ethTx.Signatures, sig)
+	if err := mergePeerSignatures(ethTx, signatures, validators); err != nil {
+		ethTxStore.Unlock()
+		log.Errorf("Refusing invalid or stale peer signature merge: %v", err)
+		return
 	}
 
 	if ethTx.Status != bridge_pb.TransactionStatus_completed &&
