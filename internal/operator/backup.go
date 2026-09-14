@@ -51,9 +51,43 @@ type BackupReceipt struct {
 	Bytes              int64     `json:"bytes"`
 	CreatedAt          time.Time `json:"createdAt"`
 	State              string    `json:"state"`
-	EthereumCheckpoint uint64    `json:"ethereumCheckpoint"`
-	KoinosCheckpoint   uint64    `json:"koinosCheckpoint"`
+	EthereumCheckpoint uint64    `json:"ethereumCheckpoint,string"`
+	KoinosCheckpoint   uint64    `json:"koinosCheckpoint,string"`
 }
+
+// Public receipts preserve uint64 checkpoint precision in browsers. Accept older
+// local receipts that encoded exact decimal JSON integers, without rounding them.
+func (r *BackupReceipt) UnmarshalJSON(raw []byte) error {
+	type plain BackupReceipt
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	for _, field := range []string{"ethereumCheckpoint", "koinosCheckpoint"} {
+		value, ok := fields[field]
+		if !ok {
+			return errors.New("backup receipt checkpoint missing")
+		}
+		text := strings.TrimSpace(string(value))
+		if !strings.HasPrefix(text, "\"") {
+			if _, err := strconv.ParseUint(text, 10, 64); err != nil {
+				return errors.New("invalid backup receipt checkpoint")
+			}
+			fields[field], _ = json.Marshal(text)
+		}
+	}
+	normalized, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	var decoded plain
+	if err := strictJSON(normalized, &decoded); err != nil {
+		return err
+	}
+	*r = BackupReceipt(decoded)
+	return nil
+}
+
 type CryptoProvider struct {
 	Path   string
 	SHA256 string
@@ -188,6 +222,9 @@ func fileEntry(dir, name string) (BackupEntry, error) {
 func (s *Store) CreateBackup(ctx context.Context, base, destination, recipient string, provider CryptoProvider) (BackupReceipt, error) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
+	return s.createBackupLocked(ctx, base, destination, recipient, provider)
+}
+func (s *Store) createBackupLocked(ctx context.Context, base, destination, recipient string, provider CryptoProvider, expectedConfig ...string) (BackupReceipt, error) {
 	if recipient == "" {
 		return BackupReceipt{}, errors.New("age public recovery recipient required")
 	}
@@ -205,6 +242,12 @@ func (s *Store) CreateBackup(ctx context.Context, base, destination, recipient s
 	raw, cfg, err := readBackupConfig(base)
 	if err != nil {
 		return BackupReceipt{}, err
+	}
+	if len(expectedConfig) > 0 {
+		hash := sha256.Sum256(raw)
+		if hex.EncodeToString(hash[:]) != expectedConfig[0] {
+			return BackupReceipt{}, errors.New("worker configuration changed before snapshot")
+		}
 	}
 	if err := worker.CheckNetworkBinding(filepath.Join(base, "bridge", ".operator"), networkBinding(cfg), true); err != nil {
 		return BackupReceipt{}, err

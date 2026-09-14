@@ -648,3 +648,72 @@ They cover valid API/broadcaster exchange in both directions, invalid peer repli
 wrong signer and digest, redirects, body bounds, duplicate identities, malformed
 stored evidence, peer-asserted completion, concurrent renewal during the network
 round trip and valid/refused renewals through both actual event handlers.
+
+## Create and inspect encrypted backups from the console
+
+Configure the encryption helper and **public** age X25519 recovery recipient once
+on the operator host, before starting the service. Keep the recovery identity in
+operator-owned recovery storage. For a named local instance, also pass
+`--instance <slot>` before the command. This policy is separate from release trust
+and cannot be changed through HTTP.
+
+```sh
+vortex-operator --data /absolute/operator-directory \
+  --backup-crypto /absolute/reviewed/backup-crypto \
+  --backup-crypto-sha256 <reviewed-helper-sha256> \
+  --recovery-recipient <public-age1-recipient> backup-configure
+```
+
+The command hashes the helper and checks the recipient by encrypting a fixed
+non-secret message. The console exposes the recipient and policy digest, never
+helper paths or recovery identities. Changing the helper on disk invalidates its
+reviewed digest and makes subsequent jobs fail. Each new job retains its original
+public recovery recipient, so rotating the policy cannot relabel an older
+archive. Older job records without recipient metadata are explicitly identified
+as needing their original local policy.
+
+In **Validator → Encrypted backups**, stop the worker gracefully, choose a unique
+backup ID and create the snapshot. The job verifies the exact registered
+configuration, obtains the process lease and all three database locks, and uses
+the existing consistent encrypted backup format. An unavailable health socket is
+not proof of shutdown: a live process lease or legacy Badger writer still blocks
+the snapshot. The action does not stop or restart a worker automatically.
+
+Creation returns a job immediately. Closing the browser or timing out does not
+restart it. Poll the inventory or retry the same ID and digests to recover its
+original result; the same ID cannot authorize changed inputs or overwrite an
+archive. One job runs per local instance. Up to 32 jobs are retained; retention
+requires local review and there is no automatic deletion. A clean operator
+shutdown cancels and waits for its active backup before releasing store ownership.
+After an abrupt interruption, a running record becomes `recovery-required` for
+inspection. It never silently resumes or claims completion from an existing file.
+A failure to persist the terminal receipt also leaves the job uncertain.
+
+Archives are stored at `backups/<ID>/archive.age` beneath the selected operator
+state directory. Copy them to independent recovery storage. **Check archive
+integrity** rehashes the ciphertext against its receipt; it does not decrypt it,
+prove the recovery identity is available, or approve a restored signer. **View
+backup receipt** exposes read-only JSON for copying, with an optional browser
+JSON download. Checkpoints are decimal strings to preserve uint64 values in
+browsers; older numeric receipts remain readable. Test restore with the local
+`backup-restore` procedure. Console restore, off-host copy, automatic retention,
+key recovery, signing reconciliation and cross-host fencing remain separate work.
+
+Private scoped endpoints are `GET /v1/worker/backups`,
+`POST /v1/worker/backups/create` (ID, registration digest and policy digest), and
+`POST /v1/worker/backups/verify` (ID only). Browser requests cannot provide a
+source/destination path, executable, recipient or recovery identity. HTTP
+instance scoping applies to the policy, jobs and archive locations.
+
+A reproducible console fixture is available after building local binaries:
+
+```sh
+go run scripts/operator-backup-fixture.go \
+  --operator /absolute/local/vortex-operator \
+  --validator /absolute/local/koinos-bridge-validator \
+  --crypto /absolute/local/backup-crypto
+```
+
+It prints a fresh private fixture directory, creates synthetic stopped-validator
+state and a test-only recovery identity, and exercises `backup-configure` through
+the compiled CLI. It starts no worker or RPC and contains no production data.

@@ -2,6 +2,7 @@ package operator
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -47,16 +48,21 @@ func strictJSON(b []byte, v interface{}) error {
 }
 
 type Store struct {
-	instancesMu sync.Mutex
-	instances   map[string]*Store
-	parent      *Store
-	workerMu    sync.Mutex
-	updateMu    sync.Mutex
-	mu          sync.Mutex
-	dir         string
-	lock        *os.File
-	data        diskState
-	instanceID  string
+	backupMu     sync.Mutex
+	backupWG     sync.WaitGroup
+	backupCancel context.CancelFunc
+	backupActive string
+	backupClosed bool
+	instancesMu  sync.Mutex
+	instances    map[string]*Store
+	parent       *Store
+	workerMu     sync.Mutex
+	updateMu     sync.Mutex
+	mu           sync.Mutex
+	dir          string
+	lock         *os.File
+	data         diskState
+	instanceID   string
 }
 
 func OpenStore(dir string) (*Store, error) {
@@ -166,6 +172,7 @@ func openSingleStore(dir string) (*Store, error) {
 }
 
 func (s *Store) Close() error {
+	s.closeBackupJobs()
 	for _, child := range s.instances {
 		child.Close()
 	}

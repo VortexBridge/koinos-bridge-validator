@@ -192,6 +192,34 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, result)
+	case r.URL.Path == "/v1/worker/backups" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.ManagedBackups())
+	case r.URL.Path == "/v1/worker/backups/create" && r.Method == "POST":
+		var req ManagedBackupRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.BeginManagedBackup(req)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 202, result)
+	case r.URL.Path == "/v1/worker/backups/verify" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.VerifyManagedBackup(req.ID)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
 	case r.URL.Path == "/v1/worker/progress" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.ProgressWindowState())
 	case r.URL.Path == "/v1/worker/progress/start" && r.Method == "POST":
