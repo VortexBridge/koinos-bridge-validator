@@ -330,7 +330,12 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 				publishers = append(publishers, id)
 			}
 		}
-		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": false, "installedVersion": nil, "staged": s.Store.StagedReleases(time.Now().UTC())})
+		installed, installedErr := s.Store.CurrentRelease()
+		installedProblem := ""
+		if installedErr != nil {
+			installedProblem = installedErr.Error()
+		}
+		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": false, "installedVersion": installed, "installedProblem": installedProblem, "staged": s.Store.StagedReleases(time.Now().UTC())})
 	case r.URL.Path == "/v1/updates/verify" && r.Method == "POST":
 		var release SignedRelease
 		if err := decode(w, r, &release); err != nil {

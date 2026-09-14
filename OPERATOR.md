@@ -44,10 +44,10 @@ identifies this operator instance for local release approvals and must be
 preserved with operator state. Do not clone an approved instance into a second
 active operator as a deployment shortcut.
 
-Flags precede the command. Supported commands are `serve`, `status`, `token-path` and
-`worker-register`, `release-stage` and `candidate-test`; `token-path` prints only the file path. The current offline CLI
+Flags precede the command. Supported commands include `serve`, `status`, `token-path`,
+`worker-register`, `release-stage`, `release-adopt` and `candidate-test`; `token-path` prints only the file path. The current offline CLI
 opens the same exclusive state lock, so stop this operator service before using
-`status`, `token-path`, `worker-register`, `release-stage` or `candidate-test`. A running instance's authenticated HTTP API can read
+`status`, `token-path`, `worker-register`, `release-stage`, `release-adopt` or `candidate-test`. A running instance's authenticated HTTP API can read
 status without stopping it. Stop the service with SIGTERM/Control-C.
 
 ## UI and synthetic integration fixture
@@ -293,6 +293,31 @@ and 256 MiB per artifact; reviewed retention tooling is still pending.
 A staged release is neither approved nor installed. Metadata listing does not
 rehash large artifacts; the actual test/activation path must reverify bytes.
 Changing current publisher policy can block previously staged manifests.
+
+Before evaluating future updates, bind the already registered worker to its
+exact current signed release. This is a one-time local bootstrap action per
+operator instance:
+
+```sh
+/tmp/vortex-operator --data /absolute/private/operator-directory \
+  --release-digest EXACT_STAGED_CURRENT_MANIFEST_DIGEST \
+  --artifact-platform linux-arm64 release-adopt
+```
+
+The command re-verifies publisher policy and staged artifact bytes, then requires
+the artifact SHA-256 to equal the operator's pinned worker binary. It also
+rehashes the registered configuration. It writes a private current-release
+identity and does not install, start or stop software. Repeating the exact action
+is idempotent; adoption cannot replace an existing identity. Restore a damaged
+identity from reviewed local evidence instead of adopting a different release.
+
+The Updates page rechecks the pinned binary, registration and configuration
+before showing that identity. Every staged validator is then compared with the
+recorded sequence, predecessor versions, configuration and database schemas,
+signing codec, and signed mixed-version declaration. Only an exact compatible
+set is labeled eligible for further rolling qualification. This compatibility
+label does not replace candidate testing, local approval, backup, participation,
+activation, verification or recovery gates. The installer remains disabled.
 
 The fixed `cmd/vortex-candidate-check` program can be built for the local Docker
 engine's native Linux architecture with `CGO_ENABLED=0`. Review its source and
