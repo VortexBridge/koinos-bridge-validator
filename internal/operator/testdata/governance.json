@@ -1,0 +1,593 @@
+{
+  "generators": {
+    "ethers": "ethers/5.8.0",
+    "protobufjs": "7.5.4",
+    "protoSHA256": "635dd61920d6ff94a6e4b14dbc8193d50cd844d264b26d3297a0513f5181779e"
+  },
+  "vectors": [
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_validator",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "0000000000000000000000000000000000000000000000000000000000000001222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "34a7ad98cbce5fb6ac4dc21e804aed213f06e2e6ac9384725b0dc056e5d379d4"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_validator",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "0000000000000000000000000000000000000000000000000000000000000002222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "8235343512e30b26257a8b5f999f7f9e70e01358b43b1343510ac8d5cfd36f0b"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "00000000000000000000000000000000000000000000000000000000000000032222222222222222222222222222222222222222000000000000000000000000000000000000000000000000ffffffffffffffff00000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "2234ac332d8159e43918c4e7cfd90911c67b8a98eb3fdcc311752dee68bd4335"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "0000000000000000000000000000000000000000000000000000000000000004222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "233276889fd838b357a76cbc9fe7adabe83074fe29d3526a5c9c4e3e772ac2bf"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "00000000000000000000000000000000000000000000000000000000000000052222222222222222222222222222222222222222000000000000000000000000000000000000000000000000ffffffffffffffff00000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "dbd9d924a2239a99284445d972c07198ddf3d340fcdd689fda6a9955c10efc17"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "0000000000000000000000000000000000000000000000000000000000000006222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "598a7b84e24ac56f663fa3c4720ca0bcd0b955d878161d0b28c4efd09171c560"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_pause",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "pause": true
+      },
+      "preimage": "00000000000000000000000000000000000000000000000000000000000000070100000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "123db2b73b037c7b2895a8fea8dbe56e3bedcc10115c8e4793e4240cc9ab3890"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_pause",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "pause": false
+      },
+      "preimage": "00000000000000000000000000000000000000000000000000000000000000070000000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "01c7f5701892ca8ead5f711377dbce4673b005d307af229ed019ed66910ba0f6"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_fee_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "00000000000000000000000000000000000000000000000000000000000000092222222222222222222222222222222222222222000000000000000000000000000000000000000000000000ffffffffffffffff00000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "ddf0f21e0e6d9020ccc747a367ca5c841334d7e5ec50e268999a184230d4e0d2"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_fee_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "000000000000000000000000000000000000000000000000000000000000000a2222222222222222222222222222222222222222000000000000000000000000000000000000000000000000ffffffffffffffff00000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "59d52c84a7619352aa30353eddb6d42e2692846e40e71f94d4d7df55bb990106"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "claim_fee_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "wallet": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "000000000000000000000000000000000000000000000000000000000000000b2222222222222222222222222222222222222222222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "1c4ed536b278b1e7a9d280964bfb7aa6b256fa9c18dceb2187e4cba039b285f3"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "claim_fee_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "0x2222222222222222222222222222222222222222",
+        "wallet": "0x2222222222222222222222222222222222222222"
+      },
+      "preimage": "000000000000000000000000000000000000000000000000000000000000000c2222222222222222222222222222222222222222222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000200000000000011111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000001d1a94a200000000002",
+      "digest": "20a6fbae330754488bd48c2016d8b36a371060cc595efc63db6d5cc6c1039c0d"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_validator",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08011219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "5687359f4ee5182c26934657f1f278d97e243aab3a32dd3de9dfc06648e49992"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_validator",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08021219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "17dd3378203ad48e045bde0381a3116f19b2b266cf891a1e8c8efacf2e86f208"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08031219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "59ef9dbc2b8f0cf89d17a71ba0cb1faa46f10d6d9b7754ae1a45c5c82d267bb9"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08041219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "d04b8dbb20c565b73979f8dc4ad704001e55f2470b1e997c6b7c6ce575ba52f2"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "add_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08051219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "27912997d655e10e87263906f018fe2ed81b1c9bca72182fb44a2cf47673fa61"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "remove_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "08061219002e33fd1aa907b224ce9ce6c94228901d283a02da956da791188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "ed83f8293984cdb96bde5d04ab14e06e6257d765dcac03dd045a9ecc6849d81e"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_pause",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "pause": true
+      },
+      "preimage": "08071001188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "85156128ba7ebd214c7787df7e5d4cb41785f6ee68523221a155b4e8e6f49c1b"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_pause",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "pause": false
+      },
+      "preimage": "0807188180808080808010221900066609c3f44815f62702e8ff836bc02859eff72c755859232880c0a8ca9a3a3001",
+      "digest": "83dc393e4ea0a0fdbe78741ca883197a815aa7a8c1646a217815696fc4892b75"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_fee_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "08091219002e33fd1aa907b224ce9ce6c94228901d283a02da956da79118ffffffffffffffffff012081808080808080102a1900066609c3f44815f62702e8ff836bc02859eff72c755859233080c0a8ca9a3a3801",
+      "digest": "f78c07e8f7ef8fe80ed96cd70d65ba94ef593ba78b703eb5d4e389df3a9a0afa"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "set_fee_wrapped_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL",
+        "fee": "18446744073709551615"
+      },
+      "preimage": "080a1219002e33fd1aa907b224ce9ce6c94228901d283a02da956da79118ffffffffffffffffff012081808080808080102a1900066609c3f44815f62702e8ff836bc02859eff72c755859233080c0a8ca9a3a3801",
+      "digest": "256c2f81c1843cfcadaf336a81c5e5a6200dd2f1b375b22b7aa944f41ffe60d1"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "action": {
+        "kind": "claim_fee_token",
+        "nonce": "9007199254740993",
+        "expiration": "2000000000000",
+        "address": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL",
+        "wallet": "15DJN4a8SgrbGhhGksSBASiSYjGnMU8dGL"
+      },
+      "preimage": "080b1219002e33fd1aa907b224ce9ce6c94228901d283a02da956da7911a19002e33fd1aa907b224ce9ce6c94228901d283a02da956da7912081808080808080102a1900066609c3f44815f62702e8ff836bc02859eff72c755859233080c0a8ca9a3a3801",
+      "digest": "43d4c79a3b2e52149a059d2c8b4af2dc6cb75e0f543c4e446fc55b026c7e5336"
+    }
+  ]
+}

@@ -2,6 +2,11 @@
 
 # koinos-bridge-validator
 
+The `codex/validator-operations` branch adds a separate private operator service.
+See [OPERATOR.md](OPERATOR.md) for implemented capabilities, local development,
+tests and the remaining integration gates. It does not replace the validator
+startup procedure below or establish production readiness.
+
 ## Building and running with docker
 
 Requirements: `docker`. If you need to install docker on your VPC/server, you can do so on most systems like this:

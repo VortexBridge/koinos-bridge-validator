@@ -14,9 +14,12 @@ type BadgerBackend struct {
 }
 
 // NewBadgerBackend BadgerBackend constructor
-func NewBadgerBackend(opts badger.Options) *BadgerBackend {
-	badgerDB, _ := badger.Open(opts)
-	return &BadgerBackend{DB: badgerDB}
+func NewBadgerBackend(opts badger.Options) (*BadgerBackend, error) {
+	badgerDB, err := badger.Open(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &BadgerBackend{DB: badgerDB}, nil
 }
 
 // Close cleans backend resources

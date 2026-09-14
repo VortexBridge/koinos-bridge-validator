@@ -39,6 +39,9 @@ type TokenConfig struct {
 }
 
 type BridgeConfig struct {
+	ObservationOnly      bool   `yaml:"observation-only"`
+	EthereumPKFile       string `yaml:"ethereum-pk-file"`
+	KoinosPKFile         string `yaml:"koinos-pk-file"`
 	Reset                bool   `yaml:"reset"`
 	InstanceID           string `yaml:"instance-id"`
 	LogLevel             string `yaml:"log-level"`

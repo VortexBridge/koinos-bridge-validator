@@ -46,8 +46,14 @@ func StreamEthereumBlocks(
 	validators map[string]util.ValidatorConfig,
 	ethConfirmations uint64,
 	ethPollingTime uint,
+	options ...Options,
 ) {
 	defer wg.Done()
+	opts := selectedOptions(options)
+	defer opts.problem()
+	if opts.ObserveOnly {
+		koinosPK = nil
+	}
 	tokensLockedEventTopic := crypto.Keccak256Hash([]byte("TokensLockedEvent(address,address,uint256,uint256,string,string,string,uint256,uint32)"))
 	tokensLockedEventAbiStr := `[{
 		"anonymous": false,
@@ -185,6 +191,7 @@ func StreamEthereumBlocks(
 
 	fmt.Println("connected to Ethereum RPC")
 
+	lastEthereumBlockParsed := startBlock
 	startBlock++
 
 	ethContractAddr := common.HexToAddress(ethContractStr)
@@ -194,33 +201,22 @@ func StreamEthereumBlocks(
 		return
 	}
 
-	var lastEthereumBlockParsed uint64
 	fromBlock := startBlock
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("stop streaming logs: %d", lastEthereumBlockParsed)
-			metadataStore.Lock()
-			defer metadataStore.Unlock()
-
-			metadata, err := metadataStore.Get()
-			if err != nil {
-				log.Error(err.Error())
-				return
-			}
-
-			metadata.LastEthereumBlockParsed = lastEthereumBlockParsed
-
-			metadataStore.Put(metadata)
 			return
 
 		case <-time.After(time.Millisecond * time.Duration(ethPollingTime)):
 			latestblock, err := ethCl.BlockNumber(ctx)
 
 			if err != nil {
+				opts.problem()
 				log.Error(err.Error())
 			} else {
+				opts.progress(lastEthereumBlockParsed)
 				log.Infof("latestblock: %d", latestblock)
 
 				// trail by ethConfirmations blocks
@@ -238,13 +234,13 @@ func StreamEthereumBlocks(
 
 				var toBlock = fromBlock + blockDelta
 
-				if blockDelta > ethMaxBlocksToStream {
-					toBlock = fromBlock + ethMaxBlocksToStream
+				if blockDelta >= ethMaxBlocksToStream {
+					toBlock = fromBlock + ethMaxBlocksToStream - 1
 				}
 				if toBlock <= latestblock {
 					query := ethereum.FilterQuery{
-						FromBlock: big.NewInt(int64(fromBlock)),
-						ToBlock:   big.NewInt(int64(toBlock)),
+						FromBlock: new(big.Int).SetUint64(fromBlock),
+						ToBlock:   new(big.Int).SetUint64(toBlock),
 						Addresses: []common.Address{
 							ethContractAddr,
 						},
@@ -260,12 +256,18 @@ func StreamEthereumBlocks(
 
 					logs, err := ethCl.FilterLogs(ctx, query)
 					if err != nil {
+						opts.problem()
 						log.Error(err.Error())
 					} else {
 
+						if err := validateEthereumLogs(logs, fromBlock, toBlock, ethContractAddr); err != nil {
+							opts.problem()
+							log.Error(err.Error())
+							continue
+						}
 						for _, vLog := range logs {
 							// do not processed removed logs
-							if vLog.Removed {
+							if vLog.Removed || len(vLog.Topics) == 0 {
 								continue
 							}
 
@@ -289,7 +291,7 @@ func StreamEthereumBlocks(
 									vLog,
 									transferCompletedEventAbi,
 								)
-							} else if vLog.Topics[0] == requestNewSignaturesEventTopic {
+							} else if vLog.Topics[0] == requestNewSignaturesEventTopic && !opts.ObserveOnly {
 								// if RequestNewSignaturesEvent
 								processEthereumRequestNewSignaturesEvent(
 									koinosPK,
@@ -307,13 +309,14 @@ func StreamEthereumBlocks(
 							lastEthereumBlockParsed = vLog.BlockNumber
 						}
 
-						if len(logs) == 0 {
-							// if no logs available
-							fromBlock = toBlock + 1
-							lastEthereumBlockParsed = toBlock
-						} else {
-							fromBlock = lastEthereumBlockParsed + 1
+						if err := checkpoint(metadataStore, true, toBlock); err != nil {
+							opts.problem()
+							log.Error(err.Error())
+							return
 						}
+						lastEthereumBlockParsed = toBlock
+						fromBlock = toBlock + 1
+						opts.progress(toBlock)
 					}
 				} else {
 					log.Info("waiting for block: " + fmt.Sprint(fromBlock))
@@ -334,6 +337,9 @@ func processEthereumRequestNewSignaturesEvent(
 	vLog types.Log,
 	eventAbi abi.ABI,
 ) {
+	if len(koinosPK) == 0 {
+		return
+	}
 	// parse event
 	event := struct {
 		TxId      []byte
@@ -662,8 +668,10 @@ func processEthereumTokensLockedEvent(
 	hash := sha256.Sum256(completeTransferHashBytes)
 	hashB64 := base64.URLEncoding.EncodeToString(hash[:])
 
-	sigBytes := util.SignKoinosHash(koinosPK, hash[:])
-	sigB64 := base64.URLEncoding.EncodeToString(sigBytes)
+	sigB64 := ""
+	if len(koinosPK) > 0 {
+		sigB64 = base64.URLEncoding.EncodeToString(util.SignKoinosHash(koinosPK, hash[:]))
+	}
 
 	// store the transaction
 	ethTxStore.Lock()
@@ -676,8 +684,7 @@ func processEthereumTokensLockedEvent(
 
 	if ethTx == nil {
 		ethTx = &bridge_pb.Transaction{}
-		ethTx.Validators = []string{koinosAddress}
-		ethTx.Signatures = []string{sigB64}
+
 	} else {
 
 		if ethTx.Hash != "" && ethTx.Hash != hashB64 {
@@ -685,10 +692,12 @@ func processEthereumTokensLockedEvent(
 			log.Errorf(errMsg)
 			panic(fmt.Errorf(errMsg))
 		}
-		ethTx.Validators = append(ethTx.Validators, koinosAddress)
-		ethTx.Signatures = append(ethTx.Signatures, sigB64)
+
 	}
 
+	if sigB64 != "" {
+		addLocalSignature(ethTx, koinosAddress, sigB64)
+	}
 	ethTx.Type = bridge_pb.TransactionType_ethereum
 	ethTx.Id = txIdHex
 	ethTx.From = ethFrom
@@ -717,6 +726,9 @@ func processEthereumTokensLockedEvent(
 
 	ethTxStore.Unlock()
 
+	if len(koinosPK) == 0 {
+		return
+	}
 	// broadcast transaction
 	signatures, _ := util.BroadcastTransaction(ethTx, koinosPK, koinosAddress, validators)
 

@@ -42,14 +42,22 @@ func StreamKoinosBlocks(
 	signaturesExpiration uint,
 	validators map[string]util.ValidatorConfig,
 	koinosPollingTime uint,
+	options ...Options,
 ) {
 	defer wg.Done()
+	opts := selectedOptions(options)
+	defer opts.problem()
+	if opts.ObserveOnly {
+		koinosPK = nil
+		ethereumPK = nil
+	}
 	// init JSON RPC client
 	rpcCl := kjsonrpc.NewKoinosRPCClient(koinosRPC)
 	rpcClient := rpc.NewJsonRPC(rpcCl)
 
 	fmt.Println("connected to Koinos RPC")
 
+	lastKoinosBlockParsed := startBlock
 	startBlock++
 
 	ethContractAddr := common.HexToAddress(ethContractStr)
@@ -59,55 +67,54 @@ func StreamKoinosBlocks(
 		return
 	}
 
-	var lastKoinosBlockParsed uint64
 	fromBlock := startBlock
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("stop streaming blocks %d", lastKoinosBlockParsed)
-			metadataStore.Lock()
-			defer metadataStore.Unlock()
-
-			metadata, err := metadataStore.Get()
-			if err != nil {
-				log.Error(err.Error())
-				return
-			}
-
-			metadata.LastKoinosBlockParsed = lastKoinosBlockParsed
-			metadataStore.Put(metadata)
-
 			return
 
 		case <-time.After(time.Millisecond * time.Duration(koinosPollingTime)):
 			headInfo, err := rpcClient.GetHeadInfo(ctx)
 
 			if err != nil {
+				opts.problem()
 				log.Error(err.Error())
 			} else {
+				if headInfo.HeadTopology == nil {
+					opts.problem()
+					continue
+				}
+				opts.progress(lastKoinosBlockParsed)
 				log.Infof("last irreversible block: %d", headInfo.LastIrreversibleBlock)
 
 				var nbBlocksToFetch uint64 = 0
 
-				if headInfo.LastIrreversibleBlock > fromBlock {
-					nbBlocksToFetch = headInfo.LastIrreversibleBlock - fromBlock
+				if headInfo.LastIrreversibleBlock >= fromBlock {
+					nbBlocksToFetch = headInfo.LastIrreversibleBlock - fromBlock + 1
 				}
 
 				if nbBlocksToFetch > koinosMaxBlocksToStream {
 					nbBlocksToFetch = koinosMaxBlocksToStream
 				}
 
-				var toBlock = fromBlock + nbBlocksToFetch
+				var toBlock = fromBlock + nbBlocksToFetch - 1
 
-				if toBlock <= headInfo.LastIrreversibleBlock {
+				if nbBlocksToFetch > 0 && toBlock <= headInfo.LastIrreversibleBlock {
 					// get blocks
 					blocks, err := rpcClient.GetBlocksByHeight(ctx, headInfo.HeadTopology.Id, fromBlock, uint32(nbBlocksToFetch))
 					if err != nil {
+						opts.problem()
 						log.Error(err.Error())
 					} else {
 						log.Infof("fetched koinos blocks: %d - %d", fromBlock, toBlock)
 
+						if err := validateBlockBatch(blocks, fromBlock, nbBlocksToFetch); err != nil {
+							opts.problem()
+							log.Error(err.Error())
+							continue
+						}
 						for _, block := range blocks.BlockItems {
 							for _, receipt := range block.Receipt.TransactionReceipts {
 								// make the sure the transaction did not revert
@@ -137,7 +144,7 @@ func StreamKoinosBlocks(
 													receipt,
 													event,
 												)
-											} else if event.Name == "bridge.request_new_signatures_event" {
+											} else if event.Name == "bridge.request_new_signatures_event" && !opts.ObserveOnly {
 												processRequestNewSignaturesEvent(
 													koinosTxStore,
 													block,
@@ -161,7 +168,13 @@ func StreamKoinosBlocks(
 						}
 
 						if len(blocks.BlockItems) > 0 {
+							if err := checkpoint(metadataStore, false, lastKoinosBlockParsed); err != nil {
+								opts.problem()
+								log.Error(err.Error())
+								return
+							}
 							fromBlock = lastKoinosBlockParsed + 1
+							opts.progress(lastKoinosBlockParsed)
 						}
 					}
 				} else {
@@ -185,6 +198,9 @@ func processRequestNewSignaturesEvent(
 	ethereumContractAddr common.Address,
 	validators map[string]util.ValidatorConfig,
 ) {
+	if ethPK == nil || len(koinosPK) == 0 {
+		return
+	}
 	// parse event
 	requestNewSignaturesEvent := &bridge_pb.RequestNewSignaturesEvent{}
 
@@ -447,8 +463,10 @@ func processKoinosTokensLockedEvent(
 	// sign the transaction
 	_, prefixedHash := util.GenerateEthereumCompleteTransferHash(txId, uint64(operationId), ethereumToken.Bytes(), recipient.Bytes(), relayer.Bytes(), payment, amount, ethereumContractAddr, metadata, expiration, uint64(chainId))
 
-	sigBytes := util.SignEthereumHash(ethPK, prefixedHash.Bytes())
-	sigHex := "0x" + common.Bytes2Hex(sigBytes)
+	sigHex := ""
+	if ethPK != nil && len(koinosPK) > 0 {
+		sigHex = "0x" + common.Bytes2Hex(util.SignEthereumHash(ethPK, prefixedHash.Bytes()))
+	}
 
 	// store the transaction
 	koinosTxStore.Lock()
@@ -462,18 +480,19 @@ func processKoinosTokensLockedEvent(
 
 	if koinosTx == nil {
 		koinosTx = &bridge_pb.Transaction{}
-		koinosTx.Validators = []string{ethereumAddress}
-		koinosTx.Signatures = []string{sigHex}
+
 	} else {
 		if koinosTx.Hash != "" && koinosTx.Hash != prefixedHash.Hex() {
 			errMsg := fmt.Sprintf("the calculated hash for tx %s is different than the one already received %s != calculated %s", txIdHex, koinosTx.Hash, prefixedHash.Hex())
 			log.Errorf(errMsg)
 			panic(fmt.Errorf(errMsg))
 		}
-		koinosTx.Validators = append(koinosTx.Validators, ethereumAddress)
-		koinosTx.Signatures = append(koinosTx.Signatures, sigHex)
+
 	}
 
+	if sigHex != "" {
+		addLocalSignature(koinosTx, ethereumAddress, sigHex)
+	}
 	koinosTx.Type = bridge_pb.TransactionType_koinos
 	koinosTx.Id = txIdHex
 	koinosTx.OpId = operationIdStr
@@ -503,6 +522,9 @@ func processKoinosTokensLockedEvent(
 
 	koinosTxStore.Unlock()
 
+	if ethPK == nil || len(koinosPK) == 0 {
+		return
+	}
 	// broadcast transaction
 	koinosSignatures, _ := util.BroadcastTransaction(koinosTx, koinosPK, koinosAddress, validators)
 
