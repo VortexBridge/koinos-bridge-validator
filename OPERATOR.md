@@ -9,7 +9,7 @@ observations, governance payload encoding, signature verification primitives,
 signed release-manifest verification, per-instance local approval/revocation,
 and independently running observation workers with locally reviewed executable
 and configuration hashes.
-Pending: managed signing and cross-host fencing, assisted provisioning, transfer
+Pending: managed signing and cross-host fencing, complete host provisioning, transfer
 history integration, governance collection/submission/finality,
 backup/restore packaging, complete candidate regression coverage and coordinated rollout.
 Local artifact staging and a restricted observation smoke runner are implemented.
@@ -76,6 +76,63 @@ an end-to-end bridge or independent-host test. Stop it when finished.
 
 ## Independent validator process
 
+### Guided initial configuration
+
+An empty instance can now create its first observation worker from saved EVM
+and Koinos deployments. First stop the operator service and prepare a locally
+reviewed executable for that instance (replace the paths and digest below):
+
+```sh
+/tmp/vortex-operator --data "$HOME/.local/share/vortex-operator" \
+  --instance my-route instance-create
+/tmp/vortex-operator --data "$HOME/.local/share/vortex-operator" \
+  --instance my-route --worker-binary /absolute/path/to/reviewed-validator \
+  --worker-sha256 REVIEWED_SHA256 worker-prepare
+```
+
+Skip `instance-create` for an existing empty slot. Flags precede the command.
+`worker-prepare` privately copies and checks the exact executable bytes; it does
+not establish publisher provenance or approve a release. It refuses an existing
+preparation or registered worker. Restart the operator service, select the slot
+in the interface, and save both deployments through **Add deployment**. Their
+environments must match and their protocol chain IDs must differ.
+
+In **Validator**, select the two deployments, set explicit first scan blocks,
+confirmation distance and a separate loopback API port, and enter known token
+pairs and peers. Review **Configuration preview** and select **Create observation
+worker**. The preview distinguishes actual network IDs from bridge protocol IDs,
+includes the public mappings and exact configuration hash, and can be exported.
+RPC and peer URLs stay in local private configuration; they are excluded from
+the public preview and creation receipt. EVM mapping addresses are canonicalized
+to the checksum form expected by the legacy runtime.
+
+Creation binds to the configuration revision and preview digest. Editing a field
+requires another preview. A retry of the exact creation request returns the
+same durable receipt, including after an operator restart; changed requests
+cannot replace an existing worker. Reload setup can recover a completed request
+whose response was lost. A failure before publication may leave a history intent
+and require a fresh preview. The bundle is published at the selected instance's
+`managed-worker` directory with private configuration, registration, observation
+mode, network binding and receipt together. Existing directories are never
+adopted or overwritten by setup. Registration of an independently prepared
+existing directory remains available through `worker-register`.
+
+Setup opens no databases, starts no process and configures no signing keys.
+Run preflight and review its results, then start observation as a separate action.
+The current defaults are three-second polling and batches of at most 100 blocks
+on both chains. Start blocks must be positive exact decimal integers no larger
+than 2^53−1; confirmation distance is 1–100000, and API port is 1024–65535 on
+127.0.0.1. Up to 256 token pairs and peers are accepted, subject to the bounded
+configuration size. Empty mappings are allowed for initial observation, but do
+not establish useful transfer interpretation or peer participation.
+
+Start heights, token pairs and peers still require route-specific reconciliation.
+Saved profiles and syntactically valid mappings do not prove deployed contract
+correspondence, finality, membership or independent custody. Boot bundles, host
+installation and policy-controlled signing remain separate unfinished work.
+
+### Runtime lifecycle
+
 The validator supports `--observe-only` or `bridge.observation-only: true`.
 In this mode it never opens configured key files, decodes keys, creates transfer
 signatures, renews signatures or broadcasts to peers. `/SubmitSignature` returns
@@ -95,6 +152,14 @@ The private Unix socket exposes authenticated health and graceful stop. Stop
 requests bind the current PID and start timestamp; no arbitrary PID signaling
 endpoint exists. The dashboard and operator may exit while the validator keeps
 running. Health describes observation freshness, not quorum or signing readiness.
+For control paths of 100 bytes or more, the socket uses a hash of the canonical
+control directory under `/tmp/vortex-control-<uid>`. That parent must be a real,
+private directory owned by the current UID; sockets remain mode 0600. The token
+and process lease remain in persistent worker state. Short paths keep their
+existing socket location. Do not remove the temporary socket directory while
+workers run: doing so interrupts management access even though the worker and
+its persistent process lease may remain active. This change addresses native
+Unix-socket path limits; it is not a host service installer.
 The `data-mode` marker prevents silently turning observation checkpoints into
 signing history, or adopting existing signing data as observation data. Use
 separate candidate directories; a mode-migration workflow is not yet implemented.

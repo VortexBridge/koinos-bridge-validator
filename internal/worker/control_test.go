@@ -21,6 +21,46 @@ func privateTestDir(t *testing.T) string {
 	t.Cleanup(func() { os.RemoveAll(d) })
 	return d
 }
+
+func TestLongControlPathsUseDistinctPrivateSockets(t *testing.T) {
+	base := privateTestDir(t)
+	paths := []string{}
+	for _, id := range []string{"first", "second"} {
+		dir := filepath.Join(base, strings.Repeat("nested-", 18), id, "bridge", ".operator")
+		if err := PrivateDir(dir); err != nil {
+			t.Fatal(err)
+		}
+		lease, err := Acquire(dir, "process.lock")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lease.Close()
+		control, err := StartControl(dir, NewMonitor(id, true, "", ""), func() {})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer control.Close()
+		path, err := controlSocket(dir, false)
+		if err != nil || len(path) >= 100 {
+			t.Fatal("socket still exceeds limit", path, err)
+		}
+		paths = append(paths, path)
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatal("socket permissions")
+		}
+		var health Health
+		if err := Call(context.Background(), dir, "GET", "/health", &health); err != nil || health.InstanceID != id {
+			t.Fatal("wrong control scope", err, health)
+		}
+		if _, err := os.Lstat(filepath.Join(dir, "control.sock")); !os.IsNotExist(err) {
+			t.Fatal("long-path socket still created")
+		}
+	}
+	if paths[0] == paths[1] {
+		t.Fatal("two data directories share a socket")
+	}
+}
 func TestKeyFileBoundary(t *testing.T) {
 	d := privateTestDir(t)
 	p := filepath.Join(d, "key")

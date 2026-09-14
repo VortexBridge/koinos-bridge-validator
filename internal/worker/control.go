@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -210,6 +212,40 @@ type Control struct {
 	socket   string
 }
 
+// Long instance paths exceed sockaddr_un on macOS and Linux. Keep their socket
+// in a private UID-owned directory, keyed by the canonical control directory.
+// The token and process lease remain in the worker's persistent directory.
+func controlSocket(dir string, create bool) (string, error) {
+	absolute, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	socket := filepath.Join(absolute, "control.sock")
+	if len(socket) < 100 {
+		return socket, nil
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Join("/tmp", "vortex-control-"+strconv.Itoa(os.Getuid()))
+	if create {
+		if err := PrivateDir(root); err != nil {
+			return "", err
+		}
+	}
+	info, err := os.Lstat(root)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return "", errors.New("private worker socket directory unavailable")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Getuid()) {
+		return "", errors.New("worker socket directory belongs to another user")
+	}
+	hash := sha256.Sum256([]byte(canonical))
+	return filepath.Join(root, hex.EncodeToString(hash[:16])+".sock"), nil
+}
+
 // Caller must hold process.lock until the worker exits, including after Close.
 func StartControl(dir string, monitor *Monitor, stop context.CancelFunc) (*Control, error) {
 	if err := PrivateDir(dir); err != nil {
@@ -219,7 +255,10 @@ func StartControl(dir string, monitor *Monitor, stop context.CancelFunc) (*Contr
 	if err != nil {
 		return nil, err
 	}
-	socket := filepath.Join(dir, "control.sock")
+	socket, err := controlSocket(dir, true)
+	if err != nil {
+		return nil, err
+	}
 	if info, err := os.Lstat(socket); err == nil {
 		if info.Mode()&os.ModeSocket == 0 {
 			return nil, errors.New("control socket path is occupied by a non-socket")
@@ -294,8 +333,12 @@ func Call(ctx context.Context, dir, method, path string, out interface{}, expect
 	if err != nil {
 		return err
 	}
+	socket, err := controlSocket(dir, false)
+	if err != nil {
+		return errors.New("worker control socket unavailable")
+	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(dir, "control.sock"))
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect disabled") }}

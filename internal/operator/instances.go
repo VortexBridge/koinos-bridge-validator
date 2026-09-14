@@ -182,6 +182,11 @@ func (s *Store) lockWorkerOwnership(base, instanceID string) (func(), error) {
 		}
 	}()
 	canonical, err := filepath.EvalSymlinks(base)
+	if os.IsNotExist(err) {
+		var parent string
+		parent, err = filepath.EvalSymlinks(filepath.Dir(base))
+		canonical = filepath.Join(parent, filepath.Base(base))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +198,7 @@ func (s *Store) lockWorkerOwnership(base, instanceID string) (func(), error) {
 		if other == s {
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(other.dir, "worker.json")); os.IsNotExist(err) {
+		if !other.workerExists() {
 			continue
 		}
 		r, err := other.registration()

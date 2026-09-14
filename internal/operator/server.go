@@ -122,6 +122,32 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/worker/setup" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.SetupState())
+	case r.URL.Path == "/v1/worker/setup/preview" && r.Method == "POST":
+		var req SetupInput
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		preview, err := s.Store.PreviewWorkerSetup(req)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, preview)
+	case r.URL.Path == "/v1/worker/setup/create" && r.Method == "POST":
+		var req CreateWorker
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		receipt, err := s.Store.CreateObservationWorker(req)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, receipt)
 	case r.URL.Path == "/v1/worker/doctor" && r.Method == "POST":
 		var req struct{}
 		if err := decode(w, r, &req); err != nil {

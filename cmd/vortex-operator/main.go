@@ -65,8 +65,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -92,6 +92,13 @@ func run() error {
 			return errors.New("unknown local instance; create it using instance-create first")
 		}
 		s = selected
+	}
+	if command == "worker-prepare" {
+		preparation, err := s.PrepareWorker(*workerBinary, *workerSHA)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(preparation)
 	}
 	if command == "doctor" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

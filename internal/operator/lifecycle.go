@@ -52,7 +52,17 @@ func registrationDigest(r WorkerRegistration) string {
 	return hex.EncodeToString(h[:])
 }
 func (s *Store) registration() (WorkerRegistration, error) {
-	b, err := worker.ReadPrivateFile(filepath.Join(s.dir, "worker.json"), 16384)
+	registrationPath := filepath.Join(s.dir, "worker.json")
+	managed := false
+	if _, err := os.Lstat(registrationPath); os.IsNotExist(err) {
+		info, err := os.Lstat(filepath.Join(s.dir, "managed-worker"))
+		if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+			return WorkerRegistration{}, errors.New("managed worker directory unavailable or not private")
+		}
+		registrationPath = filepath.Join(s.dir, "managed-worker", "registration.json")
+		managed = true
+	}
+	b, err := worker.ReadPrivateFile(registrationPath, 16384)
 	if err != nil {
 		return WorkerRegistration{}, err
 	}
@@ -63,7 +73,18 @@ func (s *Store) registration() (WorkerRegistration, error) {
 	if r.SchemaVersion != 1 || !slug.MatchString(r.InstanceID) || !filepath.IsAbs(r.BaseDir) || !workerHashPattern.MatchString(r.BinarySHA256) || !workerHashPattern.MatchString(r.ConfigSHA256) || r.Mode != "observation-only" {
 		return r, errors.New("unsupported worker registration")
 	}
+	if managed && r.BaseDir != filepath.Join(s.dir, "managed-worker") {
+		return r, errors.New("managed worker registration has an unexpected directory")
+	}
 	return r, nil
+}
+func (s *Store) workerExists() bool {
+	for _, name := range []string{"worker.json", "managed-worker"} {
+		if _, err := os.Lstat(filepath.Join(s.dir, name)); !os.IsNotExist(err) {
+			return true
+		}
+	}
+	return false
 }
 func workerConfig(base string) ([]byte, util.YamlConfig, error) {
 	b, err := worker.ReadPrivateFile(filepath.Join(base, "config.yml"), 128*1024)
@@ -93,7 +114,7 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 	if !workerHashPattern.MatchString(expectedHash) {
 		return WorkerRegistration{}, errors.New("provide the reviewed binary SHA-256")
 	}
-	if _, err := os.Lstat(filepath.Join(s.dir, "worker.json")); !os.IsNotExist(err) {
+	if s.workerExists() {
 		return WorkerRegistration{}, errors.New("worker is already registered or registration cannot be read")
 	}
 	base, err := filepath.Abs(base)
@@ -121,52 +142,7 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 			return WorkerRegistration{}, errors.New("cannot register signing data as an observation worker")
 		}
 	}
-	// Copy through a single open descriptor, hash the copied bytes, then make the
-	// private immutable snapshot executable. Changing the source cannot change it.
-	f, err := os.OpenFile(binary, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return WorkerRegistration{}, errors.New("local validator binary unavailable")
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 256*1024*1024 {
-		return WorkerRegistration{}, errors.New("invalid validator binary")
-	}
-	binDir := filepath.Join(s.dir, "worker-bin")
-	if err := worker.PrivateDir(binDir); err != nil {
-		return WorkerRegistration{}, err
-	}
-	temp, err := os.CreateTemp(binDir, ".binary-")
-	if err != nil {
-		return WorkerRegistration{}, err
-	}
-	defer os.Remove(temp.Name())
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(temp, h), io.LimitReader(f, 256*1024*1024+1))
-	if err != nil || n != info.Size() || hex.EncodeToString(h.Sum(nil)) != expectedHash {
-		temp.Close()
-		return WorkerRegistration{}, errors.New("validator binary digest or size changed")
-	}
-	if err = temp.Chmod(0500); err == nil {
-		err = temp.Sync()
-	}
-	closeErr := temp.Close()
-	if err != nil {
-		return WorkerRegistration{}, err
-	}
-	if closeErr != nil {
-		return WorkerRegistration{}, closeErr
-	}
-	if err = os.Rename(temp.Name(), filepath.Join(binDir, expectedHash)); err != nil {
-		return WorkerRegistration{}, err
-	}
-	dirFD, err := os.Open(binDir)
-	if err != nil {
-		return WorkerRegistration{}, err
-	}
-	err = dirFD.Sync()
-	dirFD.Close()
-	if err != nil {
+	if err := s.pinWorkerBinary(binary, expectedHash); err != nil {
 		return WorkerRegistration{}, err
 	}
 	configHash := sha256.Sum256(b)
@@ -177,10 +153,61 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 	}
 	return r, nil
 }
+func (s *Store) pinWorkerBinary(binary, expectedHash string) error {
+	// Copy through a single open descriptor, hash the copied bytes, then make the
+	// private immutable snapshot executable. Changing the source cannot change it.
+	f, err := os.OpenFile(binary, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return errors.New("local validator binary unavailable")
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 256*1024*1024 {
+		return errors.New("invalid validator binary")
+	}
+	binDir := filepath.Join(s.dir, "worker-bin")
+	if err := worker.PrivateDir(binDir); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(binDir, ".binary-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name())
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(temp, h), io.LimitReader(f, 256*1024*1024+1))
+	if err != nil || n != info.Size() || hex.EncodeToString(h.Sum(nil)) != expectedHash {
+		temp.Close()
+		return errors.New("validator binary digest or size changed")
+	}
+	if err = temp.Chmod(0500); err == nil {
+		err = temp.Sync()
+	}
+	closeErr := temp.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err = os.Rename(temp.Name(), filepath.Join(binDir, expectedHash)); err != nil {
+		return err
+	}
+	dirFD, err := os.Open(binDir)
+	if err != nil {
+		return err
+	}
+	err = dirFD.Sync()
+	dirFD.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 func (s *Store) WorkerStatus(ctx context.Context) WorkerStatus {
 	r, err := s.registration()
 	if err != nil {
-		if _, statErr := os.Lstat(filepath.Join(s.dir, "worker.json")); !os.IsNotExist(statErr) {
+		if s.workerExists() {
 			return WorkerStatus{State: "invalid", Message: "Local worker registration is invalid or unreadable; restore a reviewed registration."}
 		}
 		return WorkerStatus{State: "unregistered", Message: "Register a reviewed local observation worker using the CLI."}
@@ -290,6 +317,9 @@ func (s *Store) StopWorker(ctx context.Context, digest string, pid int, startedA
 func (s *Store) recordLifecycle(action, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.recordLifecycleLocked(action, id)
+}
+func (s *Store) recordLifecycleLocked(action, id string) error {
 	if len(s.data.Events) >= 4096 {
 		return errors.New("event ledger full; reviewed compaction required")
 	}
