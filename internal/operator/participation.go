@@ -295,15 +295,16 @@ func verifyParticipationSigningProof(proof worker.SigningProof, probeDigest stri
 	return "signing-key-proved", nil
 }
 
-func participationStages(policy MaintenancePolicy, requester string, states map[string]string) ([]ParticipationStageResult, bool) {
+func participationStages(policy MaintenancePolicy, requester string, states map[string]map[string]string) ([]ParticipationStageResult, bool) {
 	results := []ParticipationStageResult{}
 	allContractKeys := true
 	for _, route := range policy.Routes {
+		routeStates := states[route.ID]
 		for _, stage := range route.Stages {
 			result := ParticipationStageResult{RouteID: route.ID, Stage: stage.Name, Required: stage.Required, Eligible: []string{}, Unverified: []string{}, State: "unknown"}
 			if stage.Name == "evm-contract" || stage.Name == "koinos-contract" {
 				for _, id := range stage.Participants {
-					if id != requester && states[id] == "signing-key-proved" {
+					if id != requester && routeStates[id] == "signing-key-proved" {
 						result.Eligible = append(result.Eligible, id)
 					} else {
 						result.Unverified = append(result.Unverified, id)
@@ -336,7 +337,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	}
 	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Stages: []ParticipationStageResult{}, Notice: "Authenticated operator and worker key-possession evidence only. Fresh contract membership, valid bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
 	seen := map[string]bool{}
-	memberStates := map[string]string{}
+	memberStates := map[string]map[string]string{}
 	memberPolicy := map[string]MaintenanceMember{}
 	for _, member := range policy.Members {
 		memberPolicy[member.InstanceID] = member
@@ -355,6 +356,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 			return ParticipationVerification{}, errors.New("participation response has contradictory evidence")
 		}
 		member := ParticipationMemberResult{o.InstanceID, "unavailable", o.Problem}
+		matchedRoutes := []string{}
 		if o.Snapshot != nil {
 			snapshot := *o.Snapshot
 			if !validProgressSnapshot(snapshot) || snapshot.SampledAt.Before(req.Probe.Challenge.IssuedAt) || snapshot.SampledAt.After(o.ObservedAt) || o.ObservedAt.Sub(snapshot.SampledAt) > 5*time.Second {
@@ -373,6 +375,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 				b := snapshot.Worker.Health.NetworkBinding
 				if participant && b.EVMNetworkID == route.EVM.NetworkID && b.KoinosNetworkID == route.Koinos.NetworkID && strings.EqualFold(b.EVMContract, route.EVM.Contract) && b.KoinosContract == route.Koinos.Contract {
 					matched = true
+					matchedRoutes = append(matchedRoutes, route.ID)
 				}
 			}
 			if !matched {
@@ -403,12 +406,17 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 			default:
 				member.Notice = "Fresh signed local telemetry; bridge-key possession and stage quorum remain unverified."
 			}
+			for _, routeID := range matchedRoutes {
+				if memberStates[routeID] == nil {
+					memberStates[routeID] = map[string]string{}
+				}
+				memberStates[routeID][o.InstanceID] = member.State
+			}
 		}
 		if end := o.ObservedAt.Add(30 * time.Second); end.Before(result.ExpiresAt) {
 			result.ExpiresAt = end
 		}
 		seen[o.InstanceID] = true
-		memberStates[o.InstanceID] = member.State
 		result.Members = append(result.Members, member)
 	}
 	for _, m := range policy.Members {

@@ -215,7 +215,9 @@ at the earliest response or challenge expiry.
 
 Verification reports all five stages for every route. For `evm-contract` and
 `koinos-contract`, it excludes the operator whose window is being evaluated and
-reports whether enough other participants proved both locally mapped keys.
+reports whether enough other participants proved both locally mapped keys. A
+proof counts only for the route whose two network and contract bindings match
+that worker snapshot; it cannot be reused for another bridge route.
 `peer`, `api` and `frontend` remain `unknown`: key possession does not prove
 those external services are reachable or behaving correctly. A passed key
 threshold also does not establish fresh on-chain membership, correct transfer

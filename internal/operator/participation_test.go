@@ -593,3 +593,69 @@ func TestParticipationVerifiesBridgeKeyPossessionPerContractStage(t *testing.T) 
 		t.Fatal("accepted invalid worker key proof")
 	}
 }
+
+func TestParticipationDoesNotReuseBridgeKeyProofAcrossRoutes(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	identities := make([]syntheticBridgeIdentity, len(f.stores))
+	for i := range f.stores {
+		identities[i] = newSyntheticBridgeIdentity(t)
+		f.policy.Members[i].EVMAddress = identities[i].evmAddress
+		f.policy.Members[i].KoinosAddress = identities[i].koinosAddress
+	}
+	firstRoute := f.policy.Routes[0]
+	raw, _ := json.Marshal(firstRoute)
+	var secondRoute MaintenanceRoute
+	if err := json.Unmarshal(raw, &secondRoute); err != nil {
+		t.Fatal(err)
+	}
+	secondRoute.ID = "second-synthetic-route"
+	secondRoute.EVM.ID = "second-evm-route"
+	secondRoute.EVM.Name = "Second synthetic EVM route"
+	secondRoute.EVM.NetworkID = "31338"
+	secondRoute.EVM.Contract = identities[0].evmAddress
+	secondRoute.Koinos.ID = "second-koinos-route"
+	secondRoute.Koinos.Name = "Second synthetic Koinos route"
+	secondRoute.Koinos.Contract = identities[0].koinosAddress
+	f.policy.Routes = append(f.policy.Routes, secondRoute)
+	f.plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+	f.savePolicy(t)
+	envelope := MaintenanceEnvelope{Plan: f.plan}
+	for i := range f.stores {
+		envelope.Endorsements = append(envelope.Endorsements, f.endorse(t, i, f.plan))
+	}
+	revision, _, _ := f.stores[0].Summary()
+	request, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"route-bound-proof", revision, envelope}, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := make([]SignedParticipationObservation, len(f.stores))
+	for i, s := range f.stores {
+		reports[i] = signedKeyParticipationResponse(t, s, request, firstRoute, identities[i])
+	}
+	verified, err := VerifyParticipation(request, reports, f.policy, request.Probe.Challenge.IssuedAt.Add(2*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.ContractKeyThresholdsMet {
+		t.Fatal("one route's worker proofs satisfied another route", verified.Stages)
+	}
+	counts := map[string]map[string]int{}
+	for _, stage := range verified.Stages {
+		if stage.Stage != "evm-contract" && stage.Stage != "koinos-contract" {
+			continue
+		}
+		if counts[stage.RouteID] == nil {
+			counts[stage.RouteID] = map[string]int{}
+		}
+		counts[stage.RouteID][stage.State]++
+		if stage.RouteID == firstRoute.ID && (stage.State != "key-threshold-passed" || len(stage.Eligible) != 2) {
+			t.Fatal("matching route did not count its non-updating proofs", stage)
+		}
+		if stage.RouteID == secondRoute.ID && (stage.State != "blocked" || len(stage.Eligible) != 0) {
+			t.Fatal("proof leaked across route binding", stage)
+		}
+	}
+	if counts[firstRoute.ID]["key-threshold-passed"] != 2 || counts[secondRoute.ID]["blocked"] != 2 {
+		t.Fatal("missing route-specific contract results", verified.Stages)
+	}
+}
