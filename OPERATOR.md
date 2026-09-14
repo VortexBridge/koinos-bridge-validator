@@ -257,6 +257,72 @@ transfer correctness, contract compatibility, migration safety or readiness for 
 signing-quorum rollout. Full regression suites, test promotion, approvals and the
 staged installer remain separate required gates.
 
+## Multiple local bridge instances
+
+One operator console can manage the existing `default` instance plus up to 16
+named instances. Each named instance keeps separate configuration, history,
+release trust/approvals, artifact staging and worker registration under the
+operator directory. The validator data directories must also be separate, and
+each worker needs a distinct `instance-id` and API port. Registration rejects a
+directory or worker identity already owned by another local instance, including
+concurrent registration attempts.
+
+All instances in this console share the same local operator and host privileges.
+They are useful for separate bridge routes, not evidence of independent validators
+or failure domains. Independent operators need their own hosts, credentials and
+operator stores. Managed signing remains unavailable.
+
+Stop the local operator API before offline CLI changes; running validators keep
+their independent processes. Create a named slot and register its locally reviewed
+observation worker, using the same binary-review procedure described above:
+
+```sh
+/absolute/vortex-operator --data /absolute/private/operator \
+  --instance koinos-ethereum instance-create
+
+/absolute/vortex-operator --data /absolute/private/operator \
+  --instance koinos-ethereum \
+  --worker-base /absolute/private/koinos-ethereum-validator \
+  --worker-binary /absolute/reviewed-validator \
+  --worker-sha256 REVIEWED_BINARY_SHA256 worker-register
+
+/absolute/vortex-operator --data /absolute/private/operator instances
+/absolute/vortex-operator --data /absolute/private/operator \
+  --instance koinos-ethereum status
+```
+
+Start `serve` on the root operator directory and connect using its root access
+token. Choose **Local bridge instance** in the existing Operate page. Deployment
+forms, observations, drafts, worker actions, updates and history use that selection.
+Switching unmounts the previous workspace and clears its unsaved forms/drafts;
+already requested operations remain bound to their original instance. It does
+not stop workers or cancel actions already submitted. Reload the selected instance
+to refresh the inventory after offline CLI changes.
+
+`--instance NAME` also scopes release staging/testing and backup creation to that
+instance's operator state. Backup commands still require explicit local worker
+paths; inspect those paths before running them. A scoped release publisher policy
+belongs in `instances/NAME/release-trust.json`; a root policy is not implicitly
+inherited. Approval identities are distinct and persist across restarts. Trust or
+approval records are not copied from another instance.
+
+The root API remains compatible with the existing `/v1/status`, `/v1/worker`, and
+other routes for `default`. Authenticated `GET /v1/instances` lists local slots;
+`/v1/instances/NAME/status`, `/worker`, `/worker/start`, `/worker/stop`, `/updates`
+and other existing suffixes address a named slot. Unknown slots, nested scopes
+and path traversal are refused. HTTP cannot create slots or register arbitrary
+filesystem paths. The root token grants access to this operator's local slots;
+there is no per-slot multi-user access-control claim.
+
+Instance creation prepares a complete private store before publishing its directory.
+Missing/replaced stored identities, invalid descriptors or symlinked slots stop
+startup rather than recreating release-approval authority. Interrupted `.creating-`
+directories are not activated or shown as slots; inspect them locally before cleanup.
+There is no automatic slot deletion or identity migration command in this build.
+
+This supplies local instance management. Assisted route-to-worker configuration,
+key provisioning, doctor checks and the installation wizard remain separate work.
+
 ## Verification commands
 
 Encrypted offline backup and observation recovery are documented in

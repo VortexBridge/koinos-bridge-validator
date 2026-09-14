@@ -30,6 +30,7 @@ func main() {
 func run() error {
 	flags := flag.NewFlagSet("vortex-operator", flag.ContinueOnError)
 	dir := flags.String("data", "", "private operator state directory (required)")
+	instance := flags.String("instance", "", "local instance slot; omitted uses default (serve and token-path use the root)")
 	listen := flags.String("listen", "127.0.0.1:3021", "loopback listen address")
 	origins := flags.String("origins", "http://127.0.0.1:5173", "comma-separated exact trusted UI origins")
 	workerBase := flags.String("worker-base", "", "private validator base directory for local registration")
@@ -64,14 +65,34 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+	if command == "instance-create" {
+		created, err := s.CreateInstance(*instance)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]string{"id": *instance, "operatorInstanceId": created.InstanceID(), "state": "created", "mode": "observation-only"})
+	}
+	if command == "instances" {
+		return json.NewEncoder(os.Stdout).Encode(s.LocalInstances())
+	}
+	if *instance != "" && *instance != "default" {
+		if command == "serve" || command == "token-path" {
+			return errors.New("serve and token-path use the root operator; select an instance in the console")
+		}
+		selected, ok := s.LocalInstance(*instance)
+		if !ok {
+			return errors.New("unknown local instance; create it using instance-create first")
+		}
+		s = selected
+	}
 	if command == "backup-create" || command == "backup-restore" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

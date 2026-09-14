@@ -19,10 +19,18 @@ type Server struct {
 	mu           sync.Mutex
 	observations map[string]Observation
 	reads        chan struct{}
+	instances    map[string]*Server
 }
 
 func NewServer(store *Store, token, host string, origins []string) *Server {
-	return &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2)}
+	s := &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2), instances: map[string]*Server{}}
+	for _, entry := range store.LocalInstances() {
+		if entry.ID != "default" {
+			child, _ := store.LocalInstance(entry.ID)
+			s.instances[entry.ID] = NewServer(child, token, host, origins)
+		}
+	}
+	return s
 }
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -85,6 +93,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "operator access token required")
 		return
 	}
+	if r.URL.Path == "/v1/instances" && r.Method == "GET" {
+		writeJSON(w, 200, map[string]interface{}{"instances": s.Store.LocalInstances(), "notice": "These instances share one local operator and host control domain. Separate storage does not establish independent validators."})
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/instances/") {
+		parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/v1/instances/"), "/", 2)
+		if len(parts) != 2 || !slug.MatchString(parts[0]) || parts[1] == "" || strings.Contains(parts[1], "..") || strings.HasPrefix(parts[1], "instances") {
+			fail(w, 404, "unknown instance route")
+			return
+		}
+		target := s
+		if parts[0] != "default" {
+			target = s.instances[parts[0]]
+		}
+		if target == nil {
+			fail(w, 404, "unknown local instance")
+			return
+		}
+		request := r.Clone(r.Context())
+		request.URL.Path = "/v1/" + parts[1]
+		request.URL.RawPath = ""
+		target.serveAPI(w, request)
+		return
+	}
+	s.serveAPI(w, r)
+}
+
+func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/v1/worker" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.WorkerStatus(r.Context()))

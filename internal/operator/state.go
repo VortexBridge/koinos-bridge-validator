@@ -47,16 +47,31 @@ func strictJSON(b []byte, v interface{}) error {
 }
 
 type Store struct {
-	workerMu   sync.Mutex
-	updateMu   sync.Mutex
-	mu         sync.Mutex
-	dir        string
-	lock       *os.File
-	data       diskState
-	instanceID string
+	instancesMu sync.Mutex
+	instances   map[string]*Store
+	parent      *Store
+	workerMu    sync.Mutex
+	updateMu    sync.Mutex
+	mu          sync.Mutex
+	dir         string
+	lock        *os.File
+	data        diskState
+	instanceID  string
 }
 
 func OpenStore(dir string) (*Store, error) {
+	s, err := openSingleStore(dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadInstances(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func openSingleStore(dir string) (*Store, error) {
 	absolute, absErr := filepath.Abs(dir)
 	if absErr != nil {
 		return nil, absErr
@@ -151,6 +166,9 @@ func OpenStore(dir string) (*Store, error) {
 }
 
 func (s *Store) Close() error {
+	for _, child := range s.instances {
+		child.Close()
+	}
 	if s.lock == nil {
 		return nil
 	}

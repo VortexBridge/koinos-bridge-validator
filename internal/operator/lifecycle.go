@@ -101,6 +101,11 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 	if !slug.MatchString(cfg.Bridge.InstanceID) {
 		return WorkerRegistration{}, errors.New("worker requires a stable instance-id")
 	}
+	releaseOwnership, err := s.lockWorkerOwnership(base, cfg.Bridge.InstanceID)
+	if err != nil {
+		return WorkerRegistration{}, err
+	}
+	defer releaseOwnership()
 	if _, err := os.Lstat(filepath.Join(base, "bridge", ".operator", "data-mode")); err == nil {
 		mode, err := worker.ReadPrivateFile(filepath.Join(base, "bridge", ".operator", "data-mode"), 32)
 		if err != nil || string(mode) != "observation-only" {
