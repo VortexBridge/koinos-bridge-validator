@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -291,6 +293,13 @@ func main() {
 	defer stop()
 	monitor := worker.NewMonitor(instanceID, observeOnly, ethAddress, koinosAddress)
 	monitor.SetNetworkBinding(networkBinding)
+	if !observeOnly {
+		monitor.SetSigningProofSource(func(digest []byte) (string, string, error) {
+			evmSignature := util.SignEthereumHash(ethPrivateKey, digest)
+			koinosSignature := util.SignKoinosHash(koinosPKbytes, digest)
+			return "0x" + hex.EncodeToString(evmSignature), base64.URLEncoding.EncodeToString(koinosSignature), nil
+		})
+	}
 	ethTxStore.EnableActivity(koinosAddress)
 	koinosTxStore.EnableActivity(ethAddress)
 	monitor.SetActivitySource(func() map[string]store.TransactionActivity {

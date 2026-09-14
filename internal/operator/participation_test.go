@@ -3,8 +3,11 @@ package operator
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +15,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
+	"gopkg.in/yaml.v2"
 )
 
 func participationFixture(t *testing.T) (maintenanceFixture, ParticipationRequest, []SignedParticipationObservation) {
@@ -285,5 +294,302 @@ func TestParticipationStoredChallengeAndSupersededApproval(t *testing.T) {
 	}
 	if _, err := f.stores[0].CheckParticipation(reports, time.Now().UTC()); err == nil {
 		t.Fatal("accepted modified stored challenge")
+	}
+}
+
+type syntheticBridgeIdentity struct {
+	evmKey        []byte
+	koinosKey     []byte
+	evmAddress    string
+	koinosAddress string
+}
+
+func newSyntheticBridgeIdentity(t *testing.T) syntheticBridgeIdentity {
+	t.Helper()
+	evmPrivate, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	koinosPrivate, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	koinosKey := crypto.FromECDSA(koinosPrivate)
+	digest := make([]byte, 32)
+	digest[0] = 1
+	signature := base64.URLEncoding.EncodeToString(util.SignKoinosHash(koinosKey, digest))
+	koinosAddress, err := util.RecoverKoinosAddressFromSignature(signature, digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return syntheticBridgeIdentity{
+		evmKey: crypto.FromECDSA(evmPrivate), koinosKey: koinosKey,
+		evmAddress: crypto.PubkeyToAddress(evmPrivate.PublicKey).Hex(), koinosAddress: koinosAddress,
+	}
+}
+
+func signedKeyParticipationResponse(t *testing.T, s *Store, request ParticipationRequest, route MaintenanceRoute, identity syntheticBridgeIdentity) SignedParticipationObservation {
+	t.Helper()
+	sampledAt := request.Probe.Challenge.IssuedAt.Add(time.Second)
+	startedAt := sampledAt.Add(-time.Minute)
+	health := &worker.Health{
+		InstanceID: s.InstanceID(), PID: 1234, StartedAt: startedAt, Mode: "signing",
+		EVMAddress: identity.evmAddress, KoinosAddress: identity.koinosAddress,
+		NetworkBinding: &worker.NetworkBinding{SchemaVersion: 1, EVMNetworkID: route.EVM.NetworkID, KoinosNetworkID: route.Koinos.NetworkID, EVMContract: route.EVM.Contract, KoinosContract: route.Koinos.Contract},
+		Chains:         map[string]worker.ChainHealth{}, Activity: map[string]store.TransactionActivity{},
+	}
+	for _, chain := range []string{"evm", "koinos"} {
+		health.Chains[chain] = worker.ChainHealth{Height: 10, UpdatedAt: sampledAt, Status: "observed"}
+	}
+	for _, direction := range progressDirections {
+		health.Activity[direction] = store.TransactionActivity{Enabled: true, Complete: true, StartedAt: startedAt}
+	}
+	snapshot := ProgressSnapshot{SampledAt: sampledAt, Worker: WorkerStatus{
+		Registered: true, RegistrationDigest: strings.Repeat("a", 64), BinarySHA256: strings.Repeat("b", 64),
+		ConfigSHA256: strings.Repeat("c", 64), InstanceID: s.InstanceID(), State: "running", Health: health,
+	}}
+	probeDigest := maintenanceDigest(request.Probe.Challenge)
+	challenge := worker.SigningProofChallenge{
+		SchemaVersion: 1, ProbeDigest: probeDigest, InstanceID: health.InstanceID,
+		PID: health.PID, StartedAt: health.StartedAt, EVMAddress: health.EVMAddress, KoinosAddress: health.KoinosAddress,
+	}
+	signingDigest, err := worker.SigningProofDigest(challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evmPrivate, err := crypto.ToECDSA(identity.evmKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := worker.SigningProof{
+		Challenge:       challenge,
+		EVMSignature:    "0x" + hex.EncodeToString(util.SignEthereumHash(evmPrivate, signingDigest)),
+		KoinosSignature: base64.URLEncoding.EncodeToString(util.SignKoinosHash(identity.koinosKey, signingDigest)),
+	}
+	observation := ParticipationObservation{
+		SchemaVersion: 1, InstanceID: s.InstanceID(), ProbeDigest: probeDigest,
+		ObservedAt: sampledAt.Add(time.Millisecond), Snapshot: &snapshot, SigningProof: &proof,
+	}
+	_, key, err := s.maintenanceIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return SignedParticipationObservation{Observation: observation, Signature: hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", observation)))}
+}
+
+func attachSyntheticSigningWorker(t *testing.T, s *Store, route MaintenanceRoute, identity syntheticBridgeIdentity, workerID string) func() {
+	t.Helper()
+	base := filepath.Join(t.TempDir(), "validator")
+	if err := os.Mkdir(base, 0700); err != nil {
+		t.Fatal(err)
+	}
+	evmKeyFile, koinosKeyFile := filepath.Join(base, "evm.key"), filepath.Join(base, "koinos.key")
+	for _, path := range []string{evmKeyFile, koinosKeyFile} {
+		if err := os.WriteFile(path, []byte("synthetic-key-never-read"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := util.YamlConfig{Bridge: util.BridgeConfig{
+		InstanceID: workerID, EthereumNetworkID: route.EVM.NetworkID, KoinosNetworkID: route.Koinos.NetworkID,
+		EthereumContract: route.EVM.Contract, KoinosContract: route.Koinos.Contract,
+		EthereumPKFile: evmKeyFile, KoinosPKFile: koinosKeyFile,
+	}}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil || os.WriteFile(filepath.Join(base, "config.yml"), raw, 0600) != nil {
+		t.Fatal("cannot write signing-worker configuration", err)
+	}
+	controlDir := filepath.Join(base, "bridge", ".operator")
+	if err := worker.PrivateDir(controlDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.EnsureMode(controlDir, false, false); err != nil {
+		t.Fatal(err)
+	}
+	monitor := worker.NewMonitor(workerID, false, identity.evmAddress, identity.koinosAddress)
+	monitor.SetNetworkBinding(networkBinding(cfg))
+	monitor.Progress("evm", 10)
+	monitor.Progress("koinos", 10)
+	startedAt := monitor.Snapshot().StartedAt
+	monitor.SetActivitySource(func() map[string]store.TransactionActivity {
+		return map[string]store.TransactionActivity{
+			"evm-to-koinos": {Enabled: true, Complete: true, StartedAt: startedAt},
+			"koinos-to-evm": {Enabled: true, Complete: true, StartedAt: startedAt},
+		}
+	})
+	monitor.SetSigningProofSource(func(digest []byte) (string, string, error) {
+		evmPrivate, err := crypto.ToECDSA(identity.evmKey)
+		if err != nil {
+			return "", "", err
+		}
+		return "0x" + hex.EncodeToString(util.SignEthereumHash(evmPrivate, digest)), base64.URLEncoding.EncodeToString(util.SignKoinosHash(identity.koinosKey, digest)), nil
+	})
+	control, err := worker.StartControl(controlDir, monitor, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(base, "reviewed-validator")
+	if err := os.WriteFile(binary, []byte("synthetic executable snapshot"), 0700); err != nil {
+		control.Close()
+		t.Fatal(err)
+	}
+	binaryBytes, _ := os.ReadFile(binary)
+	hash := sha256.Sum256(binaryBytes)
+	registration, err := s.RegisterWorker(base, binary, hex.EncodeToString(hash[:]))
+	if err != nil || registration.Mode != "signing" {
+		control.Close()
+		t.Fatal("signing worker was not attached", registration, err)
+	}
+	status := s.WorkerStatus(context.Background())
+	if status.State != "running" || status.Mode != "signing" {
+		control.Close()
+		t.Fatal("attached signing worker was not observable", status)
+	}
+	doctor := s.Doctor(context.Background())
+	modePassed := false
+	for _, check := range doctor.Checks {
+		if check.ID == "data-mode" && check.Status == "passed" {
+			modePassed = true
+		}
+	}
+	if !modePassed {
+		control.Close()
+		t.Fatal("signing worker data mode failed local diagnostics", doctor)
+	}
+	if _, err := s.StartWorker(context.Background(), registrationDigest(registration)); err == nil {
+		control.Close()
+		t.Fatal("operator attempted to start an attached signing worker")
+	}
+	return func() { control.Close() }
+}
+
+func TestParticipationCollectsProofFromAttachedSigningWorkers(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	identities := make([]syntheticBridgeIdentity, len(f.stores))
+	for i := range f.stores {
+		identities[i] = newSyntheticBridgeIdentity(t)
+		f.policy.Members[i].EVMAddress = identities[i].evmAddress
+		f.policy.Members[i].KoinosAddress = identities[i].koinosAddress
+	}
+	f.plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+	f.savePolicy(t)
+	for i := 1; i < len(f.stores); i++ {
+		defer attachSyntheticSigningWorker(t, f.stores[i], f.policy.Routes[0], identities[i], fmt.Sprintf("attached-signer-%d", i))()
+	}
+	envelope := MaintenanceEnvelope{Plan: f.plan}
+	for i := range f.stores {
+		envelope.Endorsements = append(envelope.Endorsements, f.endorse(t, i, f.plan))
+	}
+	revision, _, _ := f.stores[0].Summary()
+	request, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"attached-key-proof", revision, envelope}, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := make([]SignedParticipationObservation, len(f.stores))
+	for i, s := range f.stores {
+		reports[i], err = s.ObserveParticipation(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	verified, err := VerifyParticipation(request, reports, f.policy, time.Now().UTC())
+	if err != nil || !verified.AllResponded || !verified.ContractKeyThresholdsMet || verified.ActivationReady {
+		t.Fatal("attached signing workers did not satisfy the contract key proof flow", verified, err)
+	}
+}
+
+func TestParticipationVerifiesBridgeKeyPossessionPerContractStage(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	identities := make([]syntheticBridgeIdentity, len(f.stores))
+	for i := range f.stores {
+		identities[i] = newSyntheticBridgeIdentity(t)
+		f.policy.Members[i].EVMAddress = identities[i].evmAddress
+		f.policy.Members[i].KoinosAddress = identities[i].koinosAddress
+	}
+	f.plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+	f.savePolicy(t)
+	envelope := MaintenanceEnvelope{Plan: f.plan}
+	for i := range f.stores {
+		envelope.Endorsements = append(envelope.Endorsements, f.endorse(t, i, f.plan))
+	}
+	revision, _, _ := f.stores[0].Summary()
+	request, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"key-proof", revision, envelope}, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := make([]SignedParticipationObservation, len(f.stores))
+	for i, s := range f.stores {
+		reports[i] = signedKeyParticipationResponse(t, s, request, f.policy.Routes[0], identities[i])
+	}
+	now := request.Probe.Challenge.IssuedAt.Add(2 * time.Second)
+	verified, err := VerifyParticipation(request, reports, f.policy, now)
+	if err != nil || !verified.AllResponded || !verified.ContractKeyThresholdsMet || verified.ActivationReady {
+		t.Fatal(verified, err)
+	}
+	contractStages, externalStages := 0, 0
+	for _, stage := range verified.Stages {
+		switch stage.Stage {
+		case "evm-contract", "koinos-contract":
+			contractStages++
+			if stage.State != "key-threshold-passed" || len(stage.Eligible) != 2 {
+				t.Fatal("contract key threshold did not exclude only the updating operator", stage)
+			}
+		default:
+			externalStages++
+			if stage.State != "unknown" {
+				t.Fatal("worker key proof upgraded an external stage", stage)
+			}
+		}
+	}
+	if contractStages != 2 || externalStages != 3 {
+		t.Fatal("missing stage results", verified.Stages)
+	}
+	revision, _, _ = f.stores[0].Summary()
+	readiness, err := f.stores[0].CheckUpdateReadiness(context.Background(), UpdateReadinessRequest{
+		ID: "key-proof-readiness", ExpectedRevision: revision, ReleaseDigest: request.Probe.Challenge.ReleaseDigest,
+		Platform: "linux-arm64", ParticipationResponses: reports,
+	}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check, ok := readinessCheck(readiness, "signing-quorum")
+	if !ok || check.State != "blocked" || !strings.Contains(check.Message, "proved enough locally mapped bridge keys") {
+		t.Fatal("readiness did not preserve the external-stage blocker after contract key proof", check)
+	}
+
+	missingProof := append([]SignedParticipationObservation(nil), reports...)
+	raw, _ := json.Marshal(reports[1])
+	json.Unmarshal(raw, &missingProof[1])
+	missingProof[1].Observation.SigningProof = nil
+	_, key, _ := f.stores[1].maintenanceIdentity()
+	missingProof[1].Signature = hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", missingProof[1].Observation)))
+	withoutProof, err := VerifyParticipation(request, missingProof, f.policy, now)
+	if err != nil || withoutProof.ContractKeyThresholdsMet {
+		t.Fatal("missing worker proof met contract key thresholds", withoutProof, err)
+	}
+
+	wrongIdentity := newSyntheticBridgeIdentity(t)
+	mismatch := append([]SignedParticipationObservation(nil), reports...)
+	mismatch[1] = signedKeyParticipationResponse(t, f.stores[1], request, f.policy.Routes[0], wrongIdentity)
+	withMismatch, err := VerifyParticipation(request, mismatch, f.policy, now)
+	if err != nil || withMismatch.ContractKeyThresholdsMet {
+		t.Fatal("wrong locally mapped key met contract thresholds", withMismatch, err)
+	}
+	mismatchVisible := false
+	for _, member := range withMismatch.Members {
+		if member.InstanceID == f.stores[1].InstanceID() && member.State == "signing-identity-mismatch" {
+			mismatchVisible = true
+		}
+	}
+	if !mismatchVisible {
+		t.Fatal("wrong bridge identity was not visible", withMismatch.Members)
+	}
+
+	tampered := append([]SignedParticipationObservation(nil), reports...)
+	raw, _ = json.Marshal(reports[1])
+	json.Unmarshal(raw, &tampered[1])
+	tampered[1].Observation.SigningProof.EVMSignature = "0x" + strings.Repeat("0", 130)
+	tampered[1].Signature = hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", tampered[1].Observation)))
+	if _, err := VerifyParticipation(request, tampered, f.policy, now); err == nil {
+		t.Fatal("accepted invalid worker key proof")
 	}
 }

@@ -28,9 +28,12 @@ of a local file journal.
 
 Each operator independently installs a private `maintenance-policy.json`. It has
 schemaVersion 1, an ID and expiry, and an identical ordered roster of 2–32 members
-with distinct `instanceId` and Ed25519 `publicKey` values. Include 1–32 routes,
-each with its ID, full existing EVM/Koinos deployment profiles, a public review
-evidence reference and five stage declarations:
+with distinct `instanceId` and Ed25519 `publicKey` values. A member may also
+include its locally reviewed `evmAddress` and `koinosAddress`; supply both or
+neither, and never reuse either address for another member. Contract-stage key
+thresholds remain blocked for an unmapped member. Include 1–32 routes, each with
+its ID, full existing EVM/Koinos deployment profiles, a public review evidence
+reference and five stage declarations:
 
 - `evm-contract`
 - `koinos-contract`
@@ -184,7 +187,22 @@ local worker state itself: callers cannot provide snapshots, paths or assertions
 of readiness. Missing registration, changed artifact/configuration, unavailable
 worker, stale chain observations or incomplete activity produce a signed
 unavailability reason. A valid worker snapshot is bound to the request and must
-match a route declared for that operator. No bridge signing keys are accessed.
+match a route declared for that operator.
+
+A signing worker also receives the exact typed challenge digest and the process
+identity just captured over its private Unix socket. The socket refuses a changed
+PID or start time. It signs a second SHA-256 digest prefixed with
+`VORTEX-WORKER-SIGNING-PROOF-V1` using both already loaded bridge keys. The
+operator service never reads or receives either private key. Observation-only
+workers cannot serve this endpoint. The signed proof binds the instance, PID,
+start time and both public addresses; verification requires them to match the
+same worker snapshot and, for contract threshold counting, the member addresses
+in the receiving operator's local policy.
+
+The local CLI may attach a reviewed signing worker whose private `data-mode`
+marker already says `signing` and whose configuration uses external key-file
+references. The operator never opens those files and cannot start that signer;
+the independently reviewed host service retains start authority.
 
 Verification accepts each roster identity once and rejects altered signatures,
 wrong domains/plans/releases/nonces, duplicate or unknown responders, future times,
@@ -194,6 +212,14 @@ the outer response time by no more than five seconds. A missing response remains
 missing; an authenticated unavailable or observation-only response is never
 upgraded to signing readiness. The browser marks inspections stale automatically
 at the earliest response or challenge expiry.
+
+Verification reports all five stages for every route. For `evm-contract` and
+`koinos-contract`, it excludes the operator whose window is being evaluated and
+reports whether enough other participants proved both locally mapped keys.
+`peer`, `api` and `frontend` remain `unknown`: key possession does not prove
+those external services are reachable or behaving correctly. A passed key
+threshold also does not establish fresh on-chain membership, correct transfer
+signatures or chain finality. Therefore `activationReady` remains false.
 
 In Updates, create and export a participation request for the reviewed plan.
 Other operators import its JSON, choose **Capture and sign local observation**,
@@ -235,15 +261,26 @@ prevents schedule endorsements from being reused as observations or vice versa.
 Scheduling keys now authenticate these observations as well as reservations;
 they still cannot sign bridge transfers, governance actions or release manifests.
 
-Signatures establish which configured operator reported a snapshot, not that an
-operator-controlled host or executable told the truth. They do not prove actual
-validator-key ownership, current on-chain membership, valid transfer signatures,
-contract finality, independent failure domains or satisfaction of peer/API/frontend
-thresholds. `allResponded` only describes response collection;
+The worker proof digest is SHA-256 over ASCII
+`VORTEX-WORKER-SIGNING-PROOF-V1`, a newline, and typed JSON containing the
+probe digest, instance, PID, process start and both public addresses. Its EVM
+signature is recoverable 65-byte secp256k1 encoded as `0x` hex; its Koinos proof
+is a recoverable compact secp256k1 signature encoded as canonical URL-safe base64.
+This fixed domain prevents a maintenance proof request from directly asking the
+worker to sign caller-selected transfer or governance bytes.
+
+Scheduling signatures establish which configured operator reported a snapshot;
+valid worker proofs additionally show that the responding process could use the
+two mapped private keys for this one domain-separated challenge. An
+operator-controlled host or executable can still lie, and the proof does not show
+current on-chain membership, productive bridge signing, contract finality,
+independent failure domains or satisfaction of peer/API/frontend thresholds.
+`allResponded` only describes response collection and
+`contractKeyThresholdsMet` only describes local key-possession counts;
 `activationReady` remains false. Current publisher trust, exact tested artifacts,
-previous-wave progress, stage-specific verification, installation and recovery
-remain required. Restored journals, compromised scheduling keys and clock faults
-remain outside this local protocol's guarantees.
+previous-wave progress, external stage checks, installation and recovery remain
+required. Restored journals, compromised scheduling or bridge keys, and clock
+faults remain outside this local protocol's guarantees.
 
 For a fresh participation-only fixture with all three schedule endorsements:
 

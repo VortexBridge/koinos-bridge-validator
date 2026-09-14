@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,8 +20,10 @@ import (
 // Maintenance keys authenticate schedule reservations and fresh observations,
 // never bridge signatures or executable installation. Policy is installed locally, not by a coordinator.
 type MaintenanceMember struct {
-	InstanceID string `json:"instanceId"`
-	PublicKey  string `json:"publicKey"`
+	InstanceID    string `json:"instanceId"`
+	PublicKey     string `json:"publicKey"`
+	EVMAddress    string `json:"evmAddress,omitempty"`
+	KoinosAddress string `json:"koinosAddress,omitempty"`
 }
 type MaintenanceStage struct {
 	Name         string   `json:"name"`
@@ -102,9 +105,27 @@ func validateMaintenancePolicy(p MaintenancePolicy, now time.Time) error {
 		return errors.New("invalid or expired local maintenance policy")
 	}
 	members, keys := map[string]bool{}, map[string]bool{}
+	evmAddresses, koinosAddresses := map[string]bool{}, map[string]bool{}
 	for _, m := range p.Members {
 		if _, err := maintenanceKey(m); err != nil || members[m.InstanceID] || keys[m.PublicKey] {
 			return errors.New("maintenance members and keys must be distinct")
+		}
+		if (m.EVMAddress == "") != (m.KoinosAddress == "") {
+			return errors.New("maintenance member bridge addresses must be supplied together")
+		}
+		if m.EVMAddress != "" {
+			if _, err := addressBytes("evm", m.EVMAddress); err != nil {
+				return errors.New("maintenance member has an invalid EVM address")
+			}
+			if _, err := addressBytes("koinos", m.KoinosAddress); err != nil {
+				return errors.New("maintenance member has an invalid Koinos address")
+			}
+			evmKey := strings.ToLower(m.EVMAddress)
+			if evmAddresses[evmKey] || koinosAddresses[m.KoinosAddress] {
+				return errors.New("maintenance member bridge addresses must be distinct")
+			}
+			evmAddresses[evmKey] = true
+			koinosAddresses[m.KoinosAddress] = true
 		}
 		members[m.InstanceID] = true
 		keys[m.PublicKey] = true
@@ -239,7 +260,7 @@ func (s *Store) maintenanceIdentity() (MaintenanceMember, ed25519.PrivateKey, er
 		return MaintenanceMember{}, nil, errors.New("invalid maintenance identity")
 	}
 	key := ed25519.NewKeyFromSeed(seed)
-	return MaintenanceMember{id.InstanceID, hex.EncodeToString(key.Public().(ed25519.PublicKey))}, key, nil
+	return MaintenanceMember{InstanceID: id.InstanceID, PublicKey: hex.EncodeToString(key.Public().(ed25519.PublicKey))}, key, nil
 }
 func (s *Store) maintenanceJournal(key ed25519.PrivateKey) (maintenanceJournal, error) {
 	var journal maintenanceJournal
@@ -332,7 +353,7 @@ func (s *Store) EndorseMaintenance(plan MaintenancePlan, expectedDigest string, 
 	}
 	matched := false
 	for _, m := range policy.Members {
-		if m == member {
+		if m.InstanceID == member.InstanceID && m.PublicKey == member.PublicKey {
 			matched = true
 		}
 	}

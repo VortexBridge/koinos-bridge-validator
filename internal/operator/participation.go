@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
 )
 
@@ -43,12 +44,13 @@ type BeginParticipationRequest struct {
 	Envelope         MaintenanceEnvelope `json:"envelope"`
 }
 type ParticipationObservation struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	InstanceID    string            `json:"instanceId"`
-	ProbeDigest   string            `json:"probeDigest"`
-	ObservedAt    time.Time         `json:"observedAt"`
-	Snapshot      *ProgressSnapshot `json:"snapshot,omitempty"`
-	Problem       string            `json:"problem,omitempty"`
+	SchemaVersion int                  `json:"schemaVersion"`
+	InstanceID    string               `json:"instanceId"`
+	ProbeDigest   string               `json:"probeDigest"`
+	ObservedAt    time.Time            `json:"observedAt"`
+	Snapshot      *ProgressSnapshot    `json:"snapshot,omitempty"`
+	SigningProof  *worker.SigningProof `json:"signingProof,omitempty"`
+	Problem       string               `json:"problem,omitempty"`
 }
 type SignedParticipationObservation struct {
 	Observation ParticipationObservation `json:"observation"`
@@ -59,15 +61,26 @@ type ParticipationMemberResult struct {
 	State      string `json:"state"`
 	Notice     string `json:"notice"`
 }
+type ParticipationStageResult struct {
+	RouteID    string   `json:"routeId"`
+	Stage      string   `json:"stage"`
+	Required   int      `json:"required"`
+	Eligible   []string `json:"eligible"`
+	Unverified []string `json:"unverified"`
+	State      string   `json:"state"`
+	Notice     string   `json:"notice"`
+}
 type ParticipationVerification struct {
-	ProbeDigest     string                      `json:"probeDigest"`
-	CheckedAt       time.Time                   `json:"checkedAt"`
-	ExpiresAt       time.Time                   `json:"expiresAt"`
-	Members         []ParticipationMemberResult `json:"members"`
-	Missing         []string                    `json:"missing"`
-	AllResponded    bool                        `json:"allResponded"`
-	ActivationReady bool                        `json:"activationReady"`
-	Notice          string                      `json:"notice"`
+	ProbeDigest              string                      `json:"probeDigest"`
+	CheckedAt                time.Time                   `json:"checkedAt"`
+	ExpiresAt                time.Time                   `json:"expiresAt"`
+	Members                  []ParticipationMemberResult `json:"members"`
+	Missing                  []string                    `json:"missing"`
+	Stages                   []ParticipationStageResult  `json:"stages"`
+	AllResponded             bool                        `json:"allResponded"`
+	ContractKeyThresholdsMet bool                        `json:"contractKeyThresholdsMet"`
+	ActivationReady          bool                        `json:"activationReady"`
+	Notice                   string                      `json:"notice"`
 }
 
 func participationBytes(domain string, value interface{}) []byte {
@@ -224,9 +237,27 @@ func (s *Store) ObserveParticipation(ctx context.Context, req ParticipationReque
 	}
 	s.workerMu.Lock()
 	snapshot, captureErr := s.captureProgress(ctx)
+	var proof *worker.SigningProof
+	if captureErr == nil && snapshot.Worker.Health.Mode == "signing" {
+		registration, registrationErr := s.registration()
+		if registrationErr == nil {
+			signed, proofErr := worker.CallSigningProof(ctx, filepath.Join(registration.BaseDir, "bridge", ".operator"), maintenanceDigest(req.Probe.Challenge), *snapshot.Worker.Health)
+			if proofErr == nil {
+				proof = &signed
+			} else {
+				captureErr = errors.New("worker signing-key proof is unavailable")
+			}
+		} else {
+			captureErr = errors.New("worker registration changed before signing-key proof")
+		}
+	}
 	s.workerMu.Unlock()
 	now = time.Now().UTC()
-	if err := verifyParticipationRequest(req, policy, now); err != nil {
+	currentPolicy, policyErr := s.MaintenancePolicy(now)
+	if policyErr != nil || MaintenancePolicyDigest(currentPolicy) != MaintenancePolicyDigest(policy) {
+		return SignedParticipationObservation{}, errors.New("local maintenance policy changed during participation capture")
+	}
+	if err := verifyParticipationRequest(req, currentPolicy, now); err != nil {
 		return SignedParticipationObservation{}, err
 	}
 	observation := ParticipationObservation{SchemaVersion: 1, InstanceID: s.InstanceID(), ProbeDigest: maintenanceDigest(req.Probe.Challenge), ObservedAt: now}
@@ -234,10 +265,68 @@ func (s *Store) ObserveParticipation(ctx context.Context, req ParticipationReque
 		observation.Problem = captureErr.Error()
 	} else {
 		observation.Snapshot = &snapshot
+		observation.SigningProof = proof
 	}
 	// No caller-provided worker data or stage-ready assertions are signed.
 	return SignedParticipationObservation{observation, hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", observation)))}, nil
 }
+
+func verifyParticipationSigningProof(proof worker.SigningProof, probeDigest string, snapshot ProgressSnapshot, member MaintenanceMember) (string, error) {
+	health := snapshot.Worker.Health
+	challenge := proof.Challenge
+	if challenge.SchemaVersion != 1 || challenge.ProbeDigest != probeDigest || health == nil || challenge.InstanceID != health.InstanceID || challenge.PID != health.PID || !challenge.StartedAt.Equal(health.StartedAt) || !strings.EqualFold(challenge.EVMAddress, health.EVMAddress) || challenge.KoinosAddress != health.KoinosAddress {
+		return "", errors.New("worker signing proof contradicts the authenticated snapshot")
+	}
+	digest, err := worker.SigningProofDigest(challenge)
+	if err != nil {
+		return "", err
+	}
+	evm, evmErr := util.RecoverEthereumAddressFromSignature(proof.EVMSignature, digest)
+	koinos, koinosErr := util.RecoverKoinosAddressFromSignature(proof.KoinosSignature, digest)
+	if evmErr != nil || koinosErr != nil || !strings.EqualFold(evm, challenge.EVMAddress) || koinos != challenge.KoinosAddress {
+		return "", errors.New("worker signing proof does not verify against both reported bridge identities")
+	}
+	if member.EVMAddress == "" || member.KoinosAddress == "" {
+		return "signing-identity-unmapped", nil
+	}
+	if !strings.EqualFold(member.EVMAddress, evm) || member.KoinosAddress != koinos {
+		return "signing-identity-mismatch", nil
+	}
+	return "signing-key-proved", nil
+}
+
+func participationStages(policy MaintenancePolicy, requester string, states map[string]string) ([]ParticipationStageResult, bool) {
+	results := []ParticipationStageResult{}
+	allContractKeys := true
+	for _, route := range policy.Routes {
+		for _, stage := range route.Stages {
+			result := ParticipationStageResult{RouteID: route.ID, Stage: stage.Name, Required: stage.Required, Eligible: []string{}, Unverified: []string{}, State: "unknown"}
+			if stage.Name == "evm-contract" || stage.Name == "koinos-contract" {
+				for _, id := range stage.Participants {
+					if id != requester && states[id] == "signing-key-proved" {
+						result.Eligible = append(result.Eligible, id)
+					} else {
+						result.Unverified = append(result.Unverified, id)
+					}
+				}
+				if len(result.Eligible) >= result.Required {
+					result.State = "key-threshold-passed"
+					result.Notice = "Enough non-updating participants proved possession of their locally mapped bridge keys. Fresh on-chain membership and valid bridge signatures remain separate checks."
+				} else {
+					result.State = "blocked"
+					result.Notice = "Too few non-updating participants proved possession of their locally mapped bridge keys."
+					allContractKeys = false
+				}
+			} else {
+				result.Unverified = append(result.Unverified, stage.Participants...)
+				result.Notice = "Authenticated worker key possession does not verify this external peer, API or frontend stage."
+			}
+			results = append(results, result)
+		}
+	}
+	return results, allContractKeys
+}
+
 func VerifyParticipation(req ParticipationRequest, reports []SignedParticipationObservation, policy MaintenancePolicy, now time.Time) (ParticipationVerification, error) {
 	if err := verifyParticipationRequest(req, policy, now); err != nil {
 		return ParticipationVerification{}, err
@@ -245,8 +334,13 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	if len(reports) > len(policy.Members) {
 		return ParticipationVerification{}, errors.New("too many participation responses")
 	}
-	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Notice: "Authenticated operator responses only. Fresh contract membership, verified bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
+	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Stages: []ParticipationStageResult{}, Notice: "Authenticated operator and worker key-possession evidence only. Fresh contract membership, valid bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
 	seen := map[string]bool{}
+	memberStates := map[string]string{}
+	memberPolicy := map[string]MaintenanceMember{}
+	for _, member := range policy.Members {
+		memberPolicy[member.InstanceID] = member
+	}
 	for _, signed := range reports {
 		o := signed.Observation
 		key, err := participationPublicKey(policy, o.InstanceID)
@@ -257,7 +351,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 		if o.ObservedAt.Before(req.Probe.Challenge.IssuedAt) || o.ObservedAt.After(now) || now.Sub(o.ObservedAt) >= 30*time.Second {
 			return ParticipationVerification{}, errors.New("participation response is stale or has inconsistent time")
 		}
-		if (o.Snapshot == nil) == (o.Problem == "") || len(o.Problem) > 1024 {
+		if (o.Snapshot == nil) == (o.Problem == "") || len(o.Problem) > 1024 || (o.SigningProof != nil && o.Snapshot == nil) {
 			return ParticipationVerification{}, errors.New("participation response has contradictory evidence")
 		}
 		member := ParticipationMemberResult{o.InstanceID, "unavailable", o.Problem}
@@ -286,14 +380,35 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 			}
 			member.State = "worker-observed"
 			if snapshot.Worker.Health.Mode == "observation-only" {
+				if o.SigningProof != nil {
+					return ParticipationVerification{}, errors.New("observation-only worker supplied a signing proof")
+				}
 				member.State = "observation-only"
+			} else if o.SigningProof == nil {
+				member.State = "signing-proof-missing"
+			} else {
+				state, err := verifyParticipationSigningProof(*o.SigningProof, result.ProbeDigest, snapshot, memberPolicy[o.InstanceID])
+				if err != nil {
+					return ParticipationVerification{}, err
+				}
+				member.State = state
 			}
-			member.Notice = "Fresh signed local telemetry; verified signing participation and stage quorum remain unknown."
+			switch member.State {
+			case "signing-key-proved":
+				member.Notice = "Fresh worker proof matches both bridge identities in this operator's local policy. Membership, productive signing and external stages remain unverified."
+			case "signing-identity-unmapped":
+				member.Notice = "The worker proved both bridge keys, but this local policy does not map them to the operator."
+			case "signing-identity-mismatch":
+				member.Notice = "The worker proved both reported bridge keys, but they differ from this local policy."
+			default:
+				member.Notice = "Fresh signed local telemetry; bridge-key possession and stage quorum remain unverified."
+			}
 		}
 		if end := o.ObservedAt.Add(30 * time.Second); end.Before(result.ExpiresAt) {
 			result.ExpiresAt = end
 		}
 		seen[o.InstanceID] = true
+		memberStates[o.InstanceID] = member.State
 		result.Members = append(result.Members, member)
 	}
 	for _, m := range policy.Members {
@@ -304,6 +419,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	sort.Slice(result.Members, func(i, j int) bool { return result.Members[i].InstanceID < result.Members[j].InstanceID })
 	sort.Strings(result.Missing)
 	result.AllResponded = len(result.Missing) == 0
+	result.Stages, result.ContractKeyThresholdsMet = participationStages(policy, req.Probe.Challenge.Requester, memberStates)
 	return result, nil
 }
 func (s *Store) CheckParticipation(reports []SignedParticipationObservation, now time.Time) (ParticipationVerification, error) {

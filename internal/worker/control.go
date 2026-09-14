@@ -41,10 +41,26 @@ type Health struct {
 	Activity       map[string]store.TransactionActivity `json:"activity,omitempty"`
 	NetworkBinding *NetworkBinding                      `json:"networkBinding,omitempty"`
 }
+type SigningProofChallenge struct {
+	SchemaVersion int       `json:"schemaVersion"`
+	ProbeDigest   string    `json:"probeDigest"`
+	InstanceID    string    `json:"instanceId"`
+	PID           int       `json:"pid"`
+	StartedAt     time.Time `json:"startedAt"`
+	EVMAddress    string    `json:"evmAddress"`
+	KoinosAddress string    `json:"koinosAddress"`
+}
+type SigningProof struct {
+	Challenge       SigningProofChallenge `json:"challenge"`
+	EVMSignature    string                `json:"evmSignature"`
+	KoinosSignature string                `json:"koinosSignature"`
+}
+type SigningProofSource func([]byte) (string, string, error)
 type Monitor struct {
 	mu             sync.Mutex
 	health         Health
 	activitySource func() map[string]store.TransactionActivity
+	proofSource    SigningProofSource
 }
 
 func NewMonitor(id string, observe bool, evm, koinos string) *Monitor {
@@ -86,6 +102,48 @@ func (m *Monitor) SetActivitySource(source func() map[string]store.TransactionAc
 	if m.activitySource == nil {
 		m.activitySource = source
 	}
+}
+func (m *Monitor) SetSigningProofSource(source SigningProofSource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.proofSource == nil {
+		m.proofSource = source
+	}
+}
+func SigningProofDigest(challenge SigningProofChallenge) ([]byte, error) {
+	probe, err := hex.DecodeString(challenge.ProbeDigest)
+	if err != nil || len(probe) != sha256.Size || hex.EncodeToString(probe) != challenge.ProbeDigest {
+		return nil, errors.New("signing proof requires a canonical SHA-256 probe digest")
+	}
+	if challenge.SchemaVersion != 1 || challenge.InstanceID == "" || len(challenge.InstanceID) > 128 || challenge.PID <= 0 || challenge.StartedAt.IsZero() || challenge.EVMAddress == "" || challenge.KoinosAddress == "" {
+		return nil, errors.New("signing proof requires a complete worker identity")
+	}
+	raw, _ := json.Marshal(challenge)
+	h := sha256.New()
+	h.Write([]byte("VORTEX-WORKER-SIGNING-PROOF-V1\n"))
+	h.Write(raw)
+	return h.Sum(nil), nil
+}
+func (m *Monitor) signingProof(probeDigest string, expectedPID int, expectedStartedAt time.Time) (SigningProof, error) {
+	m.mu.Lock()
+	health, source := m.health, m.proofSource
+	m.mu.Unlock()
+	if health.PID != expectedPID || !health.StartedAt.Equal(expectedStartedAt) {
+		return SigningProof{}, errors.New("worker changed since signing proof review")
+	}
+	challenge := SigningProofChallenge{1, probeDigest, health.InstanceID, health.PID, health.StartedAt, health.EVMAddress, health.KoinosAddress}
+	digest, err := SigningProofDigest(challenge)
+	if err != nil {
+		return SigningProof{}, err
+	}
+	if health.Mode != "signing" || source == nil {
+		return SigningProof{}, errors.New("worker has no signing proof capability")
+	}
+	evmSignature, koinosSignature, err := source(digest)
+	if err != nil || evmSignature == "" || koinosSignature == "" {
+		return SigningProof{}, errors.New("worker could not create both signing proofs")
+	}
+	return SigningProof{challenge, evmSignature, koinosSignature}, nil
 }
 func (m *Monitor) Snapshot() Health {
 	m.mu.Lock()
@@ -305,6 +363,28 @@ func StartControl(dir string, monitor *Monitor, stop context.CancelFunc) (*Contr
 			json.NewEncoder(w).Encode(monitor.Snapshot())
 			return
 		}
+		if r.Method == "POST" && r.URL.Path == "/signing-proof" {
+			var input struct {
+				ProbeDigest string    `json:"probeDigest"`
+				PID         int       `json:"pid"`
+				StartedAt   time.Time `json:"startedAt"`
+			}
+			d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+			d.DisallowUnknownFields()
+			if d.Decode(&input) != nil || d.Decode(new(interface{})) != io.EOF {
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "invalid signing proof request"})
+				return
+			}
+			proof, err := monitor.signingProof(input.ProbeDigest, input.PID, input.StartedAt)
+			if err != nil {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			json.NewEncoder(w).Encode(proof)
+			return
+		}
 		if r.Method == "POST" && r.URL.Path == "/stop" {
 			var expected struct {
 				PID       int       `json:"pid"`
@@ -385,6 +465,55 @@ func Call(ctx context.Context, dir, method, path string, out interface{}, expect
 		return errors.New("invalid worker response")
 	}
 	return nil
+}
+
+func CallSigningProof(ctx context.Context, dir, probeDigest string, expected Health) (SigningProof, error) {
+	var result SigningProof
+	probe, err := hex.DecodeString(probeDigest)
+	if err != nil || len(probe) != sha256.Size || hex.EncodeToString(probe) != probeDigest || expected.PID <= 0 || expected.StartedAt.IsZero() {
+		return result, errors.New("invalid signing proof request")
+	}
+	token, err := ReadPrivateFile(filepath.Join(dir, "control-token"), 64)
+	if err != nil {
+		return result, err
+	}
+	socket, err := controlSocket(dir, false)
+	if err != nil {
+		return result, errors.New("worker control socket unavailable")
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect disabled") }}
+	body, _ := json.Marshal(struct {
+		ProbeDigest string    `json:"probeDigest"`
+		PID         int       `json:"pid"`
+		StartedAt   time.Time `json:"startedAt"`
+	}{probeDigest, expected.PID, expected.StartedAt})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/signing-proof", bytes.NewReader(body))
+	if err != nil {
+		return result, err
+	}
+	req.Header.Set("Authorization", "Bearer "+string(token))
+	res, err := client.Do(req)
+	if err != nil {
+		return result, errors.New("worker control socket unavailable")
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return result, errors.New("worker signing proof unavailable")
+	}
+	decoder := json.NewDecoder(io.LimitReader(res.Body, 16*1024))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&result) != nil || decoder.Decode(new(interface{})) != io.EOF {
+		return result, errors.New("invalid worker signing proof")
+	}
+	challenge := result.Challenge
+	if challenge.ProbeDigest != probeDigest || challenge.InstanceID != expected.InstanceID || challenge.PID != expected.PID || !challenge.StartedAt.Equal(expected.StartedAt) || challenge.EVMAddress != expected.EVMAddress || challenge.KoinosAddress != expected.KoinosAddress {
+		return SigningProof{}, errors.New("worker signing proof changed since review")
+	}
+	return result, nil
 }
 
 // EnsureMode prevents an observation checkpoint being mistaken for a signed

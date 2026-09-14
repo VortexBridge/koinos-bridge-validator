@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -226,5 +227,53 @@ func TestStaleHealthIsNotHealthy(t *testing.T) {
 	m.Problem("evm")
 	if m.Snapshot().Chains["evm"].Status != "unavailable" {
 		t.Fatal("failure not visible")
+	}
+}
+
+func TestPrivateSigningProofIsDomainBoundAndUnavailableInObservationMode(t *testing.T) {
+	probeDigest := strings.Repeat("a", 64)
+	signingDir := privateTestDir(t)
+	signing := NewMonitor("signing-worker", false, "0x1111111111111111111111111111111111111111", "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8")
+	expected := signing.Snapshot()
+	challenge := SigningProofChallenge{1, probeDigest, expected.InstanceID, expected.PID, expected.StartedAt, expected.EVMAddress, expected.KoinosAddress}
+	expectedDigest, err := SigningProofDigest(challenge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	received := make(chan []byte, 1)
+	signing.SetSigningProofSource(func(digest []byte) (string, string, error) {
+		received <- append([]byte(nil), digest...)
+		return "synthetic-evm-proof", "synthetic-koinos-proof", nil
+	})
+	control, err := StartControl(signingDir, signing, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer control.Close()
+	proof, err := CallSigningProof(context.Background(), signingDir, probeDigest, expected)
+	if err != nil || proof.Challenge != challenge || proof.EVMSignature != "synthetic-evm-proof" || proof.KoinosSignature != "synthetic-koinos-proof" {
+		t.Fatal(proof, err)
+	}
+	if got := <-received; !bytes.Equal(got, expectedDigest) {
+		t.Fatal("worker signer received a digest outside the fixed proof domain")
+	}
+	if _, err := CallSigningProof(context.Background(), signingDir, strings.Repeat("A", 64), expected); err == nil {
+		t.Fatal("accepted noncanonical proof digest")
+	}
+	stale := expected
+	stale.StartedAt = stale.StartedAt.Add(-time.Second)
+	if _, err := CallSigningProof(context.Background(), signingDir, probeDigest, stale); err == nil {
+		t.Fatal("changed worker identity received a signing proof")
+	}
+
+	observationDir := privateTestDir(t)
+	observationMonitor := NewMonitor("observation-worker", true, "", "")
+	observation, err := StartControl(observationDir, observationMonitor, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observation.Close()
+	if _, err := CallSigningProof(context.Background(), observationDir, probeDigest, observationMonitor.Snapshot()); err == nil {
+		t.Fatal("observation-only worker created a signing proof")
 	}
 }

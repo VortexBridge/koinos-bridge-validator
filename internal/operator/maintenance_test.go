@@ -182,7 +182,7 @@ func TestMaintenanceRefusesContradictoryCoordinatorPlans(t *testing.T) {
 	}
 }
 func TestMaintenanceValidationAndLocalAuthority(t *testing.T) {
-	for _, name := range []string{"overlap", "threshold", "unknown-stage", "policy-change", "duplicate-key", "digest", "revoked", "stale-revision", "late-endorsement", "journal-missing", "journal-corrupt", "wrong-instance"} {
+	for _, name := range []string{"overlap", "threshold", "unknown-stage", "policy-change", "duplicate-key", "partial-bridge-identity", "invalid-bridge-identity", "duplicate-bridge-identity", "digest", "revoked", "stale-revision", "late-endorsement", "journal-missing", "journal-corrupt", "wrong-instance"} {
 		t.Run(name, func(t *testing.T) {
 			f := newMaintenanceFixture(t)
 			s := f.stores[0]
@@ -206,6 +206,22 @@ func TestMaintenanceValidationAndLocalAuthority(t *testing.T) {
 				f.savePolicy(t)
 			case "duplicate-key":
 				f.policy.Members[1].PublicKey = f.policy.Members[0].PublicKey
+				f.savePolicy(t)
+				plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+			case "partial-bridge-identity":
+				f.policy.Members[0].EVMAddress = f.policy.Routes[0].EVM.Contract
+				f.savePolicy(t)
+				plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+			case "invalid-bridge-identity":
+				f.policy.Members[0].EVMAddress = "0x0"
+				f.policy.Members[0].KoinosAddress = "invalid"
+				f.savePolicy(t)
+				plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+			case "duplicate-bridge-identity":
+				for i := 0; i < 2; i++ {
+					f.policy.Members[i].EVMAddress = f.policy.Routes[0].EVM.Contract
+					f.policy.Members[i].KoinosAddress = f.policy.Routes[0].Koinos.Contract
+				}
 				f.savePolicy(t)
 				plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
 			case "digest":

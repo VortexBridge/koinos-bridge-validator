@@ -310,8 +310,10 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		}
 		if participation.ActivationReady {
 			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "passed", "Fresh verified signing participation satisfies every applicable route stage."))
+		} else if participation.ContractKeyThresholdsMet {
+			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Non-updating operators proved enough locally mapped bridge keys for both contract stages, but current on-chain membership and peer/API/frontend thresholds remain unverified."))
 		} else {
-			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Authenticated worker responses do not yet verify bridge signing participation or route-stage quorum."))
+			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Authenticated responses do not prove enough locally mapped bridge keys for both contract stages; all external route stages also remain unverified."))
 		}
 		request, readErr := s.readLocalParticipation()
 		policy, policyErr := s.MaintenancePolicy(now)

@@ -54,7 +54,12 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	report.RegistrationDigest = registrationDigest(r)
-	add("registration", "passed", "A local observation worker is registered to this instance.")
+	if r.Mode == "signing" {
+		report.Notice = "Point-in-time attached signing-worker diagnostic, not proof of productive signing or a start permit. The independently reviewed host service retains start authority. No state was changed."
+		add("registration", "passed", "An independently started signing worker is registered to this instance for observation and maintenance proof requests.")
+	} else {
+		add("registration", "passed", "A local observation worker is registered to this instance.")
+	}
 	info, err := os.Lstat(r.BaseDir)
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		add("private-directory", "failed", "Worker directory must exist, be private (0700), and not be a symlink.")
@@ -105,18 +110,18 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 		add("api-listener", "passed", "Worker API is configured on literal loopback. Port availability is not reserved by this check.")
 	}
 	control := filepath.Join(r.BaseDir, "bridge", ".operator")
-	if worker.CheckRestoreFence(control, true) != nil {
-		add("restore-review", "failed", "Restored state is unreviewed or differs from its review. Complete the local restore-review workflow before starting.")
+	if worker.CheckRestoreFence(control, r.Mode != "signing") != nil {
+		add("restore-review", "failed", "Restored state is unreviewed or incompatible with this worker mode. Complete the local reconciliation workflow before starting.")
 	} else {
-		add("restore-review", "passed", "No outstanding observation recovery review was detected. This is not proof that an old signer is fenced.")
+		add("restore-review", "passed", "No incompatible restore fence was detected. This is not proof that an old signer is fenced.")
 	}
 	mode, modeErr := worker.ReadPrivateFile(filepath.Join(control, "data-mode"), 32)
 	_, markerErr := os.Lstat(filepath.Join(control, "data-mode"))
 	_, metadataErr := os.Lstat(filepath.Join(r.BaseDir, "bridge", "metadata"))
-	if (modeErr == nil && string(mode) == "observation-only") || (os.IsNotExist(markerErr) && os.IsNotExist(metadataErr)) {
-		add("data-mode", "passed", "Data is marked observation-only, or no prior metadata exists. Startup must acquire the actual database locks.")
+	if (modeErr == nil && string(mode) == r.Mode) || (r.Mode == "observation-only" && os.IsNotExist(markerErr) && os.IsNotExist(metadataErr)) {
+		add("data-mode", "passed", "The saved data mode matches this registration. Startup must acquire the actual database locks.")
 	} else {
-		add("data-mode", "failed", "Existing data is not verifiably observation-only. Inspect it locally; do not reset or relabel signing data.")
+		add("data-mode", "failed", "Existing data does not match the registered worker mode. Inspect it locally; do not reset or relabel signing data.")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

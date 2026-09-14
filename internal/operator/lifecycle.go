@@ -41,6 +41,7 @@ type WorkerStatus struct {
 	InstanceID         string         `json:"instanceId,omitempty"`
 	BinarySHA256       string         `json:"binarySha256,omitempty"`
 	ConfigSHA256       string         `json:"configSha256,omitempty"`
+	Mode               string         `json:"mode,omitempty"`
 	State              string         `json:"state"`
 	Health             *worker.Health `json:"health,omitempty"`
 	Message            string         `json:"message"`
@@ -70,10 +71,10 @@ func (s *Store) registration() (WorkerRegistration, error) {
 	if err := strictJSON(b, &r); err != nil {
 		return r, errors.New("invalid worker registration")
 	}
-	if r.SchemaVersion != 1 || !slug.MatchString(r.InstanceID) || !filepath.IsAbs(r.BaseDir) || !workerHashPattern.MatchString(r.BinarySHA256) || !workerHashPattern.MatchString(r.ConfigSHA256) || r.Mode != "observation-only" {
+	if r.SchemaVersion != 1 || !slug.MatchString(r.InstanceID) || !filepath.IsAbs(r.BaseDir) || !workerHashPattern.MatchString(r.BinarySHA256) || !workerHashPattern.MatchString(r.ConfigSHA256) || (r.Mode != "observation-only" && r.Mode != "signing") {
 		return r, errors.New("unsupported worker registration")
 	}
-	if managed && r.BaseDir != filepath.Join(s.dir, "managed-worker") {
+	if managed && (r.BaseDir != filepath.Join(s.dir, "managed-worker") || r.Mode != "observation-only") {
 		return r, errors.New("managed worker registration has an unexpected directory")
 	}
 	return r, nil
@@ -96,7 +97,7 @@ func workerConfig(base string) ([]byte, util.YamlConfig, error) {
 		return nil, cfg, errors.New("invalid or unknown worker configuration fields")
 	}
 	if cfg.Bridge.EthereumPK != "" || cfg.Bridge.KoinosPK != "" {
-		return nil, cfg, errors.New("managed observation configuration must not contain inline signing keys")
+		return nil, cfg, errors.New("reviewed worker configuration must not contain inline signing keys")
 	}
 	if cfg.Bridge.Reset {
 		return nil, cfg, errors.New("managed worker cannot use reset on startup")
@@ -108,6 +109,28 @@ func workerConfig(base string) ([]byte, util.YamlConfig, error) {
 	}
 	return b, cfg, nil
 }
+
+func registeredWorkerMode(base string) (string, error) {
+	path := filepath.Join(base, "bridge", ".operator", "data-mode")
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return "observation-only", nil
+	} else if err != nil {
+		return "", errors.New("worker data mode is unavailable")
+	}
+	mode, err := worker.ReadPrivateFile(path, 32)
+	if err != nil {
+		return "", errors.New("worker data mode is unavailable or not private")
+	}
+	switch string(mode) {
+	case "observation-only":
+		return "observation-only", nil
+	case "signing":
+		return "signing", nil
+	default:
+		return "", errors.New("worker data mode is unsupported")
+	}
+}
+
 func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistration, error) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -136,17 +159,18 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 		return WorkerRegistration{}, err
 	}
 	defer releaseOwnership()
-	if _, err := os.Lstat(filepath.Join(base, "bridge", ".operator", "data-mode")); err == nil {
-		mode, err := worker.ReadPrivateFile(filepath.Join(base, "bridge", ".operator", "data-mode"), 32)
-		if err != nil || string(mode) != "observation-only" {
-			return WorkerRegistration{}, errors.New("cannot register signing data as an observation worker")
-		}
+	mode, err := registeredWorkerMode(base)
+	if err != nil {
+		return WorkerRegistration{}, err
+	}
+	if mode == "signing" && (cfg.Bridge.EthereumPKFile == "" || cfg.Bridge.KoinosPKFile == "") {
+		return WorkerRegistration{}, errors.New("signing worker registration requires external key-file references")
 	}
 	if err := s.pinWorkerBinary(binary, expectedHash); err != nil {
 		return WorkerRegistration{}, err
 	}
 	configHash := sha256.Sum256(b)
-	r := WorkerRegistration{1, cfg.Bridge.InstanceID, base, expectedHash, hex.EncodeToString(configHash[:]), "observation-only"}
+	r := WorkerRegistration{SchemaVersion: 1, InstanceID: cfg.Bridge.InstanceID, BaseDir: base, BinarySHA256: expectedHash, ConfigSHA256: hex.EncodeToString(configHash[:]), Mode: mode}
 	encoded, _ := json.Marshal(r)
 	if err = atomicFile(s.dir, "worker.json", encoded); err != nil {
 		return WorkerRegistration{}, err
@@ -212,7 +236,11 @@ func (s *Store) WorkerStatus(ctx context.Context) WorkerStatus {
 		}
 		return WorkerStatus{State: "unregistered", Message: "Register a reviewed local observation worker using the CLI."}
 	}
-	result := WorkerStatus{Registered: true, RegistrationDigest: registrationDigest(r), InstanceID: r.InstanceID, BinarySHA256: r.BinarySHA256, ConfigSHA256: r.ConfigSHA256, State: "unavailable", Message: "Worker socket is unavailable; it may be stopped or unhealthy."}
+	message := "Worker socket is unavailable; it may be stopped or unhealthy."
+	if r.Mode == "signing" {
+		message = "Signing worker socket is unavailable; start it through its independently reviewed host service."
+	}
+	result := WorkerStatus{Registered: true, RegistrationDigest: registrationDigest(r), InstanceID: r.InstanceID, BinarySHA256: r.BinarySHA256, ConfigSHA256: r.ConfigSHA256, Mode: r.Mode, State: "unavailable", Message: message}
 	var health worker.Health
 	if err := worker.Call(ctx, filepath.Join(r.BaseDir, "bridge", ".operator"), "GET", "/health", &health); err == nil {
 		if health.InstanceID != r.InstanceID || health.Mode != r.Mode {
@@ -222,7 +250,11 @@ func (s *Store) WorkerStatus(ctx context.Context) WorkerStatus {
 		}
 		result.State = "running"
 		result.Health = &health
-		result.Message = "Independent observation worker. Chain observations do not establish signing readiness."
+		if r.Mode == "signing" {
+			result.Message = "Independent signing worker. Fresh bridge-key proof is requested only for a reviewed maintenance challenge."
+		} else {
+			result.Message = "Independent observation worker. Chain observations do not establish signing readiness."
+		}
 	}
 	return result
 }
@@ -235,6 +267,9 @@ func (s *Store) StartWorker(ctx context.Context, digest string) (WorkerStatus, e
 	}
 	if registrationDigest(r) != digest {
 		return WorkerStatus{}, errors.New("worker registration changed; review it again")
+	}
+	if r.Mode == "signing" {
+		return s.WorkerStatus(ctx), errors.New("the operator cannot start a signing worker; use its independently reviewed host service")
 	}
 	status := s.WorkerStatus(ctx)
 	if status.State == "running" {

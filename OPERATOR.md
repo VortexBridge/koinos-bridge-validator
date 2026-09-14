@@ -8,8 +8,9 @@ a running or enrolled validator.
 Implemented: durable private deployment configuration, read-only EVM/Koinos
 observations, governance payload encoding, signature verification primitives,
 signed release-manifest verification, per-instance local approval/revocation,
-and independently running observation workers with locally reviewed executable
-and configuration hashes.
+independently running observation workers with locally reviewed executable and
+configuration hashes, and read-only attachment to an independently started
+signing worker for maintenance key-possession proofs.
 Pending: managed signing and cross-host fencing, complete host provisioning, transfer
 history integration, governance collection/submission/finality,
 backup/restore packaging, complete candidate regression coverage and coordinated rollout.
@@ -172,13 +173,18 @@ leases under the OS user's configuration directory exclude accidental duplicate
 signers on that user account. These locks do not fence cloned keys on another
 host or another OS account. Managed signing remains disabled.
 
-### Register an observation worker
+### Register a reviewed worker
 
 Build and review the local validator executable, prepare a private base directory
 with a mode-0600 `config.yml`, and give it a stable `bridge.instance-id`. The
 configuration must contain no inline keys and must not request a database reset.
-The registration command only supports observation mode. Stop the operator first;
-registering does not stop an independently running validator.
+With no existing `data-mode` marker, registration creates an observation-worker
+record. An existing private `data-mode` marker may instead identify a `signing`
+worker that was already started through an independently reviewed host service.
+That signing configuration must reference both keys through external key files;
+inline keys are refused. The operator records the file paths as part of the
+configuration digest but never opens the key files. Stop the operator service
+first; registration does not stop an independently running validator.
 
 ```sh
 go build -trimpath -o /tmp/vortex-validator ./cmd/koinos-bridge-validator
@@ -191,10 +197,13 @@ shasum -a 256 /tmp/vortex-validator
 
 The command snapshots the executable into a private hash-named location and pins
 the configuration digest. Restart the operator, open **Validator** in the panel,
-and start the observation worker. Changes to the reviewed configuration or binary
-are refused at startup. The panel cannot provide executable paths, shell commands
-or key material. Stop requires review of the currently observed process. Start and
-stop intents are recorded durably; an intent is not proof of completion.
+and start an observation worker. Changes to the reviewed configuration or binary
+are refused at startup. A registered signing worker cannot be started by the
+operator; start it through its reviewed host service, then reload the panel. The
+panel can observe it, request the fixed maintenance proof from that same process,
+and issue a reviewed graceful stop, but it cannot provide executable paths, shell
+commands or key material. Stop requires review of the currently observed process.
+Start and stop intents are recorded durably; an intent is not proof of completion.
 
 This initial registration is not a security-update installer or an OS boot service.
 Replacing a registered binary/configuration, automatic recovery after host reboot,
@@ -332,11 +341,14 @@ Each pass, block or unknown result is retained in the private
 Readiness receipt IDs are immutable: an exact retry returns the original receipt,
 while different evidence needs a new ID. Receipts expire after at most 30 seconds
 and always remain non-authorizing in this implementation. Signed worker telemetry
-does not yet prove bridge signing participation or every route-stage threshold;
-later waves therefore require the immediately preceding operator's signed result.
-The install/verify/recovery state machine remains missing. Those conditions stay
-visibly blocked and `installerEnabled` remains false. Do not use a receipt as
-permission to stop or replace a validator.
+can now carry a domain-separated proof that the responding process possesses both
+bridge keys mapped in local maintenance policy. The participation report excludes
+the updating operator and evaluates both contract-stage key thresholds. This does
+not prove current on-chain membership, productive bridge signing or the
+peer/API/frontend stages, so signing quorum remains blocked. Later waves also
+require the immediately preceding operator's signed result. The
+install/verify/recovery state machine remains missing, `installerEnabled` stays
+false, and no receipt permits stopping or replacing a validator.
 
 The fixed `cmd/vortex-candidate-check` program can be built for the local Docker
 engine's native Linux architecture with `CGO_ENABLED=0`. Review its source and
