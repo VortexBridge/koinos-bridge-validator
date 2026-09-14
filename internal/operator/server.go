@@ -335,7 +335,20 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		if installedErr != nil {
 			installedProblem = installedErr.Error()
 		}
-		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": false, "installedVersion": installed, "installedProblem": installedProblem, "staged": s.Store.StagedReleases(time.Now().UTC())})
+		readiness := s.Store.UpdateReadinessInventory()
+		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": false, "installedVersion": installed, "installedProblem": installedProblem, "staged": s.Store.StagedReleases(time.Now().UTC()), "readiness": readiness.Receipts, "readinessProblem": readiness.Problem, "readinessNotice": readiness.Notice})
+	case r.URL.Path == "/v1/updates/readiness" && r.Method == "POST":
+		var req UpdateReadinessRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		receipt, err := s.Store.CheckUpdateReadiness(r.Context(), req, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, receipt)
 	case r.URL.Path == "/v1/updates/verify" && r.Method == "POST":
 		var release SignedRelease
 		if err := decode(w, r, &release); err != nil {

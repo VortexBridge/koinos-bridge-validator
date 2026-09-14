@@ -319,6 +319,24 @@ set is labeled eligible for further rolling qualification. This compatibility
 label does not replace candidate testing, local approval, backup, participation,
 activation, verification or recovery gates. The installer remains disabled.
 
+The console can record a point-in-time **update readiness receipt** for a selected
+staged release. Supply the ID of a completed encrypted backup and the fresh signed
+participation-response array collected for the reserved maintenance plan. The
+operator rechecks the exact current and candidate bytes, current publisher policy,
+version/schema/codec compatibility, the current version-2 candidate report,
+local approval window, fresh bound worker observations, post-approval backup
+integrity, reservation, authenticated participation and wave order together.
+Each pass, block or unknown result is retained in the private
+`update-readiness/` history and can be exported from the interface.
+
+Readiness receipt IDs are immutable: an exact retry returns the original receipt,
+while different evidence needs a new ID. Receipts expire after at most 30 seconds
+and always remain non-authorizing in this implementation. Signed worker telemetry
+does not yet prove bridge signing participation or every route-stage threshold;
+later-wave success receipts and the install/verify/recovery state machine are also
+missing. Those conditions remain visibly blocked and `installerEnabled` remains
+false. Do not use a receipt as permission to stop or replace a validator.
+
 The fixed `cmd/vortex-candidate-check` program can be built for the local Docker
 engine's native Linux architecture with `CGO_ENABLED=0`. Review its source and
 hash independently of the release being tested. Invoke the local smoke runner:

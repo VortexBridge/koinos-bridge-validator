@@ -58,6 +58,7 @@ type Store struct {
 	parent       *Store
 	workerMu     sync.Mutex
 	updateMu     sync.Mutex
+	readinessMu  sync.Mutex
 	mu           sync.Mutex
 	dir          string
 	lock         *os.File
