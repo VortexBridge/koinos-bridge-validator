@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +32,8 @@ func save(path string, value interface{}) {
 	must(os.WriteFile(path, raw, 0600))
 }
 func main() {
+	fullConsent := flag.Bool("full-consent", false, "record all three synthetic endorsements for participation tests")
+	flag.Parse()
 	base, err := os.MkdirTemp("", "vortex-maintenance-dev.")
 	must(err)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -94,7 +97,11 @@ func main() {
 	}
 	report, err := operator.VerifyMaintenance(envelope, policy, now)
 	must(err)
-	for i := 1; i < 3; i++ {
+	firstEndorser := 1
+	if *fullConsent {
+		firstEndorser = 0
+	}
+	for i := firstEndorser; i < 3; i++ {
 		revision, _, _ := stores[i].Summary()
 		envelope, err = stores[i].EndorseMaintenanceEnvelope(operator.EndorseMaintenanceRequest{Envelope: envelope, Digest: report.Digest, ExpectedRevision: revision}, now)
 		must(err)

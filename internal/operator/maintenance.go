@@ -16,8 +16,8 @@ import (
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
 )
 
-// Maintenance keys authorize schedule reservations only, never bridge signatures
-// or executable installation. Policy is installed locally, not by a coordinator.
+// Maintenance keys authenticate schedule reservations and fresh observations,
+// never bridge signatures or executable installation. Policy is installed locally, not by a coordinator.
 type MaintenanceMember struct {
 	InstanceID string `json:"instanceId"`
 	PublicKey  string `json:"publicKey"`

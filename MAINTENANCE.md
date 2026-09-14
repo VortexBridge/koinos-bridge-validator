@@ -158,3 +158,101 @@ threshold violations, stale revisions, local revocation, concurrent coordinator
 forks, restart recovery, damaged history, scoped HTTP authentication and actual
 compiled CLI exchange across three separate stores. These tests establish local
 protocol behavior, not the specification's separate-host rollout acceptance.
+
+## Fresh authenticated operator responses
+
+The Updates panel now provides a portable challenge/response exchange after a
+fully endorsed plan is reviewed. This is an input to the remaining rollout
+preflight, not signing-quorum verification or an activation permit. It can run
+before the scheduled window for inspection; an installer must separately enforce
+the actual activation window and all release, recovery and stage requirements.
+
+The requesting operator must own a window in the plan and retain both its durable
+reservation and a current local approval covering that window. Only its latest
+validator approval is eligible; revocation or a superseding sequence invalidates
+local verification. A challenge binds the exact plan, policy, requester, release,
+a random 256-bit nonce and a lifetime of at most two minutes, ending no later than
+the maintenance window. It is signed with the local scheduling identity under a
+separate domain. One active challenge is retained in the private
+`maintenance/participation.json`. Exact retries survive restart. A new ID cannot
+replace an active challenge, and a damaged stored signature is refused rather
+than silently reset. Expired challenges can be replaced with a new ID/nonce.
+
+Each responding operator verifies the request against its independently installed
+policy and its own durable reservation. The response endpoint captures fresh
+local worker state itself: callers cannot provide snapshots, paths or assertions
+of readiness. Missing registration, changed artifact/configuration, unavailable
+worker, stale chain observations or incomplete activity produce a signed
+unavailability reason. A valid worker snapshot is bound to the request and must
+match a route declared for that operator. No bridge signing keys are accessed.
+
+Verification accepts each roster identity once and rejects altered signatures,
+wrong domains/plans/releases/nonces, duplicate or unknown responders, future times,
+expired challenges, and responses at least 30 seconds old. The embedded snapshot
+must follow challenge issuance, have internally fresh/complete data, and precede
+the outer response time by no more than five seconds. A missing response remains
+missing; an authenticated unavailable or observation-only response is never
+upgraded to signing readiness. The browser marks inspections stale automatically
+at the earliest response or challenge expiry.
+
+In Updates, create and export a participation request for the reviewed plan.
+Other operators import its JSON, choose **Capture and sign local observation**,
+and export their response. On the requesting operator, **Use local response in
+collection** adds its own response without manual copying. Collect responses in a
+JSON array and choose **Import and verify responses file**, or paste the array
+and verify it. File imports are bounded to 1 MiB. Exchanges must be quick enough
+to meet the 30-second freshness limit; automated authenticated collection is still
+pending. Nothing sends messages or contacts other operator endpoints automatically.
+
+Offline CLI equivalents (stop only the management API before CLI use; the worker
+can continue running):
+
+```sh
+vortex-operator --data /private/operator --instance my-route \
+  --maintenance-file /private/endorsed-plan.json \
+  --maintenance-revision CURRENT_REVISION --participation-id check-one \
+  participation-begin
+vortex-operator --data /private/operator --instance my-route participation-status
+vortex-operator --data /private/other-operator --instance my-route \
+  --participation-file /private/participation-request.json participation-respond
+vortex-operator --data /private/operator --instance my-route \
+  --participation-file /private/responses.json participation-verify
+```
+
+All input files must be private regular JSON files. CLI output contains public
+request/response data; keep any saved files mode 0600 for subsequent CLI import.
+Authenticated scoped HTTP routes are GET `/v1/maintenance/participation` and POST
+`/v1/maintenance/participation/begin`, `/respond`, `/verify` beneath that prefix.
+Begin accepts `{id, expectedRevision, envelope}`; respond accepts the exported
+`{envelope, probe}` package; verify accepts the response array and checks against
+the requesting operator's retained challenge, not a supplied replacement.
+
+Signature domains are ASCII `VORTEX-MAINTENANCE-PROBE-V1` for the typed challenge
+and `VORTEX-MAINTENANCE-OBSERVATION-V1` for the typed observation, followed by a
+newline and Go `encoding/json` serialization in struct field order. Probe digests
+are SHA-256 of typed challenge JSON without the prefix. The domain separation
+prevents schedule endorsements from being reused as observations or vice versa.
+Scheduling keys now authenticate these observations as well as reservations;
+they still cannot sign bridge transfers, governance actions or release manifests.
+
+Signatures establish which configured operator reported a snapshot, not that an
+operator-controlled host or executable told the truth. They do not prove actual
+validator-key ownership, current on-chain membership, valid transfer signatures,
+contract finality, independent failure domains or satisfaction of peer/API/frontend
+thresholds. `allResponded` only describes response collection;
+`activationReady` remains false. Current publisher trust, exact tested artifacts,
+previous-wave progress, stage-specific verification, installation and recovery
+remain required. Restored journals, compromised scheduling keys and clock faults
+remain outside this local protocol's guarantees.
+
+For a fresh participation-only fixture with all three schedule endorsements:
+
+```sh
+go run scripts/operator-maintenance-fixture.go --full-consent
+```
+
+Use its three operator directories for CLI response exchange and its `plan.json`
+for the UI. This generator creates no worker or RPC. The runtime evidence in the
+root implementation folder additionally records a separately built observation
+worker against a loopback synthetic RPC; its reported network identifiers are
+fixture inputs, not live deployment evidence.

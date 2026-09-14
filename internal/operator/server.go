@@ -122,6 +122,44 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/maintenance/participation" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.ParticipationState(time.Now().UTC()))
+	case r.URL.Path == "/v1/maintenance/participation/begin" && r.Method == "POST":
+		var req BeginParticipationRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.BeginParticipation(req, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, result)
+	case r.URL.Path == "/v1/maintenance/participation/respond" && r.Method == "POST":
+		var req ParticipationRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.ObserveParticipation(r.Context(), req)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
+	case r.URL.Path == "/v1/maintenance/participation/verify" && r.Method == "POST":
+		var req []SignedParticipationObservation
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.CheckParticipation(req, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
 	case r.URL.Path == "/v1/maintenance" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.MaintenanceState(time.Now().UTC()))
 	case r.URL.Path == "/v1/maintenance/verify" && r.Method == "POST":

@@ -52,6 +52,8 @@ func run() error {
 	reviewNote := flags.String("review-note", "", "non-secret restore checkpoint/configuration review note")
 	ethereumHeight := flags.String("review-ethereum-height", "", "exact restored Ethereum checkpoint in decimal")
 	koinosHeight := flags.String("review-koinos-height", "", "exact restored Koinos checkpoint in decimal")
+	participationFile := flags.String("participation-file", "", "private participation request or response array JSON")
+	participationID := flags.String("participation-id", "", "unique lowercase participation challenge ID")
 	maintenanceFile := flags.String("maintenance-file", "", "private portable maintenance envelope JSON")
 	maintenanceDigest := flags.String("maintenance-digest", "", "exact locally reviewed maintenance plan digest")
 	maintenanceRevision := flags.String("maintenance-revision", "", "current local revision for endorsement")
@@ -68,8 +70,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -95,6 +97,46 @@ func run() error {
 			return errors.New("unknown local instance; create it using instance-create first")
 		}
 		s = selected
+	}
+	if command == "participation-status" {
+		return json.NewEncoder(os.Stdout).Encode(s.ParticipationState(time.Now().UTC()))
+	}
+	if command == "participation-begin" {
+		envelope, err := operator.ReadMaintenanceEnvelope(*maintenanceFile)
+		if err != nil {
+			return err
+		}
+		revision, err := strconv.ParseUint(*maintenanceRevision, 10, 64)
+		if err != nil {
+			return errors.New("provide --maintenance-revision from current local status")
+		}
+		result, err := s.BeginParticipation(operator.BeginParticipationRequest{ID: *participationID, ExpectedRevision: revision, Envelope: envelope}, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	if command == "participation-respond" {
+		var request operator.ParticipationRequest
+		if err := operator.ReadParticipationInput(*participationFile, &request); err != nil {
+			return err
+		}
+		result, err := s.ObserveParticipation(context.Background(), request)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
+	if command == "participation-verify" {
+		var reports []operator.SignedParticipationObservation
+		if err := operator.ReadParticipationInput(*participationFile, &reports); err != nil {
+			return err
+		}
+		result, err := s.CheckParticipation(reports, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
 	}
 	if command == "maintenance-init" {
 		member, err := s.InitializeMaintenance()
