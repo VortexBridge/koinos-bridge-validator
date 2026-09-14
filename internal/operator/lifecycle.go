@@ -21,6 +21,10 @@ import (
 
 var workerHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+func networkBinding(cfg util.YamlConfig) worker.NetworkBinding {
+	return worker.NetworkBinding{SchemaVersion: 1, EVMNetworkID: cfg.Bridge.EthereumNetworkID, KoinosNetworkID: cfg.Bridge.KoinosNetworkID, EVMContract: cfg.Bridge.EthereumContract, KoinosContract: cfg.Bridge.KoinosContract}
+}
+
 // Registration is installed only by the local CLI. The browser never supplies
 // executable paths, argument lists, key paths or shell commands.
 type WorkerRegistration struct {
@@ -75,6 +79,11 @@ func workerConfig(base string) ([]byte, util.YamlConfig, error) {
 	}
 	if cfg.Bridge.Reset {
 		return nil, cfg, errors.New("managed worker cannot use reset on startup")
+	}
+	if binding := networkBinding(cfg); binding.Enabled() {
+		if err := binding.Validate(); err != nil {
+			return nil, cfg, err
+		}
 	}
 	return b, cfg, nil
 }

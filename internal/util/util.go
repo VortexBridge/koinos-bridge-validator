@@ -49,6 +49,7 @@ type BridgeConfig struct {
 	ApiUrl               string `yaml:"api-url"`
 
 	EthereumRpc             string `yaml:"ethereum-rpc"`
+	EthereumNetworkID       string `yaml:"ethereum-network-id,omitempty"`
 	EthereumContract        string `yaml:"ethereum-contract"`
 	EthereumBlockStart      uint64 `yaml:"ethereum-block-start"`
 	EthereumPK              string `yaml:"ethereum-pk"`
@@ -57,6 +58,7 @@ type BridgeConfig struct {
 	EthereumPollingTime     uint   `yaml:"ethereum-polling-time"`
 
 	KoinosRpc             string `yaml:"koinos-rpc"`
+	KoinosNetworkID       string `yaml:"koinos-network-id,omitempty"`
 	KoinosContract        string `yaml:"koinos-contract"`
 	KoinosBlockStart      uint64 `yaml:"koinos-block-start"`
 	KoinosPK              string `yaml:"koinos-pk"`

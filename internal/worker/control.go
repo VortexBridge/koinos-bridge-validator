@@ -27,13 +27,14 @@ type ChainHealth struct {
 	Status    string    `json:"status"`
 }
 type Health struct {
-	InstanceID    string                 `json:"instanceId"`
-	PID           int                    `json:"pid"`
-	StartedAt     time.Time              `json:"startedAt"`
-	Mode          string                 `json:"mode"`
-	EVMAddress    string                 `json:"evmAddress,omitempty"`
-	KoinosAddress string                 `json:"koinosAddress,omitempty"`
-	Chains        map[string]ChainHealth `json:"chains"`
+	InstanceID     string                 `json:"instanceId"`
+	PID            int                    `json:"pid"`
+	StartedAt      time.Time              `json:"startedAt"`
+	Mode           string                 `json:"mode"`
+	EVMAddress     string                 `json:"evmAddress,omitempty"`
+	KoinosAddress  string                 `json:"koinosAddress,omitempty"`
+	Chains         map[string]ChainHealth `json:"chains"`
+	NetworkBinding *NetworkBinding        `json:"networkBinding,omitempty"`
 }
 type Monitor struct {
 	mu     sync.Mutex
@@ -45,7 +46,14 @@ func NewMonitor(id string, observe bool, evm, koinos string) *Monitor {
 	if observe {
 		mode = "observation-only"
 	}
-	return &Monitor{health: Health{id, os.Getpid(), time.Now().UTC(), mode, evm, koinos, map[string]ChainHealth{"evm": {Status: "starting"}, "koinos": {Status: "starting"}}}}
+	return &Monitor{health: Health{InstanceID: id, PID: os.Getpid(), StartedAt: time.Now().UTC(), Mode: mode, EVMAddress: evm, KoinosAddress: koinos, Chains: map[string]ChainHealth{"evm": {Status: "starting"}, "koinos": {Status: "starting"}}}}
+}
+func (m *Monitor) SetNetworkBinding(binding NetworkBinding) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if binding.Enabled() {
+		m.health.NetworkBinding = &binding
+	}
 }
 func (m *Monitor) Progress(chain string, height uint64) {
 	m.mu.Lock()
@@ -57,6 +65,13 @@ func (m *Monitor) Problem(chain string) {
 	defer m.mu.Unlock()
 	h := m.health.Chains[chain]
 	h.Status = "unavailable"
+	m.health.Chains[chain] = h
+}
+func (m *Monitor) IdentityProblem(chain string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.health.Chains[chain]
+	h.Status = "network-unverified"
 	m.health.Chains[chain] = h
 }
 func (m *Monitor) Snapshot() Health {

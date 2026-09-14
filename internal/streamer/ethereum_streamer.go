@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 	log "github.com/koinos/koinos-log-golang"
 
 	"github.com/mr-tron/base58"
@@ -180,14 +183,34 @@ func StreamEthereumBlocks(
 		return
 	}
 
-	ethCl, err := ethclient.Dial(ethRPC)
+	var ethCl *ethclient.Client
+	if opts.ExpectedNetworkID != "" {
+		var transport *gethrpc.Client
+		transport, err = gethrpc.DialHTTPWithClient(ethRPC, &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }})
+		if err == nil {
+			ethCl = ethclient.NewClient(transport)
+		}
+	} else {
+		ethCl, err = ethclient.Dial(ethRPC)
+	}
 
 	if err != nil {
-		log.Error(err.Error())
+		if opts.ExpectedNetworkID != "" {
+			log.Error("configured EVM RPC connection failed")
+		} else {
+			log.Error(err.Error())
+		}
 		return
 	}
 
 	defer ethCl.Close()
+	identity := func(ctx context.Context) (string, error) {
+		id, err := ethCl.ChainID(ctx)
+		if err != nil {
+			return "", err
+		}
+		return id.String(), nil
+	}
 
 	fmt.Println("connected to Ethereum RPC")
 
@@ -210,12 +233,22 @@ func StreamEthereumBlocks(
 			return
 
 		case <-time.After(time.Millisecond * time.Duration(ethPollingTime)):
+			if !opts.identity(ctx, identity) {
+				continue
+			}
 			latestblock, err := ethCl.BlockNumber(ctx)
 
 			if err != nil {
 				opts.problem()
-				log.Error(err.Error())
+				if opts.ExpectedNetworkID != "" {
+					log.Error("configured EVM RPC head read failed")
+				} else {
+					log.Error(err.Error())
+				}
 			} else {
+				if !opts.identity(ctx, identity) {
+					continue
+				}
 				opts.progress(lastEthereumBlockParsed)
 				log.Infof("latestblock: %d", latestblock)
 
@@ -257,8 +290,15 @@ func StreamEthereumBlocks(
 					logs, err := ethCl.FilterLogs(ctx, query)
 					if err != nil {
 						opts.problem()
-						log.Error(err.Error())
+						if opts.ExpectedNetworkID != "" {
+							log.Error("configured EVM RPC log read failed")
+						} else {
+							log.Error(err.Error())
+						}
 					} else {
+						if !opts.identity(ctx, identity) {
+							continue
+						}
 
 						if err := validateEthereumLogs(logs, fromBlock, toBlock, ethContractAddr); err != nil {
 							opts.problem()

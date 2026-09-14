@@ -10,6 +10,16 @@ Each operator owns its recovery identity and approves its local tools. No shared
 database, central recovery key, dashboard session or publisher can decrypt an
 operator's backup or authorize recovered signing.
 
+When a worker has explicit network IDs, backup checks its saved network/contract
+binding against the configuration before exporting state. The non-secret IDs
+survive encryption and restore, and restore creates the corresponding private
+binding marker before loading databases. Checkpoint/configuration review remains
+required. This prevents a restored route from silently losing its network pins;
+it does not establish the honesty or finality of the replacement RPC. Legacy
+backups without network IDs remain unbound and require a separately reviewed
+migration to gain pins. Older binaries that do not implement these fields/markers
+must not be used as a rollback for a bound route without compatibility review.
+
 ## Build the tools
 
 Build the operator with the main module's documented Go toolchain. The crypto

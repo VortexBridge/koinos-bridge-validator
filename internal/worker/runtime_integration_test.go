@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -28,6 +30,7 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 	}
 	var rangeMu sync.Mutex
 	firstRanges := 0
+	var wrongNetwork int32
 	rpc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			ID     json.RawMessage `json:"id"`
@@ -39,6 +42,13 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 		}
 		var result interface{}
 		switch req.Method {
+		case "eth_chainId":
+			result = "0x7a69"
+			if r.URL.Path == "/first" && atomic.LoadInt32(&wrongNetwork) == 1 {
+				result = "0x1"
+			}
+		case "chain.get_chain_id":
+			result = map[string]string{"chain_id": testNetworkBinding().KoinosNetworkID}
 		case "eth_blockNumber":
 			result = "0x6"
 		case "eth_getLogs":
@@ -70,6 +80,7 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 		addr := listener.Addr().String()
 		listener.Close()
 		cfg := fmt.Sprintf("bridge:\n  instance-id: %s\n  log-level: error\n  api-url: %s\n  ethereum-rpc: %s\n  koinos-rpc: %s\n  ethereum-contract: '0x1111111111111111111111111111111111111111'\n  koinos-contract: '1111111111111111111114oLvT2'\n  ethereum-pk-file: /deliberately-missing-synthetic-key\n  koinos-pk-file: /deliberately-missing-synthetic-key\n  ethereum-confirmations: 1\n  ethereum-polling-time: 10\n  koinos-polling-time: 10\n", id, addr, rpc.URL+"/"+id, rpc.URL+"/"+id)
+		cfg += fmt.Sprintf("  ethereum-network-id: '31337'\n  koinos-network-id: '%s'\n", testNetworkBinding().KoinosNetworkID)
 		if err := os.WriteFile(filepath.Join(d, "config.yml"), []byte(cfg), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -142,6 +153,22 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 	if beforeRestart == 0 || afterRestart != beforeRestart {
 		t.Fatal("crash restart replayed the durable EVM checkpoint")
 	}
+	atomic.StoreInt32(&wrongNetwork, 1)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var h Health
+		if Call(context.Background(), filepath.Join(first, "bridge", ".operator"), "GET", "/health", &h) == nil && h.Chains["evm"].Status == "network-unverified" {
+			if h.NetworkBinding == nil || h.NetworkBinding.EVMNetworkID != "31337" || h.Chains["evm"].Height != 5 {
+				t.Fatal("wrong network binding/checkpoint in health", h)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("actual worker did not report changed network")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	atomic.StoreInt32(&wrongNetwork, 0)
 	// Stopping one independent directory must not stop the other validator.
 	var result map[string]bool
 	var firstHealth, secondHealth Health
@@ -170,5 +197,25 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 	}
 	if err := b.Wait(); err != nil {
 		t.Fatal(err)
+	}
+	// After a genuine process exit, removing the configured pin still cannot
+	// relabel persisted state as an unbound legacy route.
+	configPath := filepath.Join(first, "config.yml")
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.Contains(line, "network-id:") {
+			lines = append(lines, line)
+		}
+	}
+	if err := os.WriteFile(configPath, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	removedPin := exec.Command(binary, "--basedir", first, "--observe-only")
+	if out, err := removedPin.CombinedOutput(); err == nil || !strings.Contains(string(out), "network binding requires") {
+		t.Fatalf("removed network pin was not refused: %v %s", err, out)
 	}
 }

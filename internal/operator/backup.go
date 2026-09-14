@@ -206,6 +206,9 @@ func (s *Store) CreateBackup(ctx context.Context, base, destination, recipient s
 	if err != nil {
 		return BackupReceipt{}, err
 	}
+	if err := worker.CheckNetworkBinding(filepath.Join(base, "bridge", ".operator"), networkBinding(cfg), true); err != nil {
+		return BackupReceipt{}, err
+	}
 	dbs, err := openSnapshotDatabases(base)
 	if err != nil {
 		return BackupReceipt{}, err
@@ -461,6 +464,9 @@ func RestoreBackup(ctx context.Context, source, destination, identityFile string
 	cfg.Bridge.InstanceID = "restore-" + hex.EncodeToString(seed)
 	config, _ := yaml.Marshal(cfg)
 	if err := atomicFile(base, "config.yml", config); err != nil {
+		return BackupReceipt{}, err
+	}
+	if err := worker.EnsureNetworkBinding(filepath.Join(base, "bridge", ".operator"), networkBinding(cfg), false); err != nil {
 		return BackupReceipt{}, err
 	}
 	for _, name := range backupDatabases {

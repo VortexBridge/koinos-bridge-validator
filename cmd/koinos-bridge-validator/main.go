@@ -99,6 +99,14 @@ func main() {
 	if metadataStatErr != nil && !os.IsNotExist(metadataStatErr) {
 		panic(metadataStatErr)
 	}
+	networkBinding := worker.NetworkBinding{SchemaVersion: 1, EVMNetworkID: yamlConfig.Bridge.EthereumNetworkID, KoinosNetworkID: yamlConfig.Bridge.KoinosNetworkID, EVMContract: yamlConfig.Bridge.EthereumContract, KoinosContract: yamlConfig.Bridge.KoinosContract}
+	existingRouteData, err := worker.HasValidatorData(*baseDir)
+	if err != nil {
+		panic(err)
+	}
+	if err := worker.EnsureNetworkBinding(controlDir, networkBinding, existingRouteData); err != nil {
+		panic(err)
+	}
 	if err := worker.EnsureMode(controlDir, observeOnly, metadataStatErr == nil); err != nil {
 		panic(err)
 	}
@@ -282,6 +290,7 @@ func main() {
 	mainCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	monitor := worker.NewMonitor(instanceID, observeOnly, ethAddress, koinosAddress)
+	monitor.SetNetworkBinding(networkBinding)
 	control, err := worker.StartControl(controlDir, monitor, stop)
 	if err != nil {
 		panic(err)
@@ -310,7 +319,7 @@ func main() {
 			validators,
 			ethConfirmations,
 			ethPollingTime,
-			streamer.Options{ObserveOnly: observeOnly, OnProgress: func(h uint64) { monitor.Progress("evm", h) }, OnProblem: func() { monitor.Problem("evm") }},
+			streamer.Options{ObserveOnly: observeOnly, ExpectedNetworkID: networkBinding.EVMNetworkID, OnIdentityProblem: func() { monitor.IdentityProblem("evm") }, OnProgress: func(h uint64) { monitor.Progress("evm", h) }, OnProblem: func() { monitor.Problem("evm") }},
 		)
 	}
 
@@ -335,7 +344,7 @@ func main() {
 			signaturesExpiration,
 			validators,
 			koinosPollingTime,
-			streamer.Options{ObserveOnly: observeOnly, OnProgress: func(h uint64) { monitor.Progress("koinos", h) }, OnProblem: func() { monitor.Problem("koinos") }},
+			streamer.Options{ObserveOnly: observeOnly, ExpectedNetworkID: networkBinding.KoinosNetworkID, OnIdentityProblem: func() { monitor.IdentityProblem("koinos") }, OnProgress: func(h uint64) { monitor.Progress("koinos", h) }, OnProblem: func() { monitor.Problem("koinos") }},
 		)
 	}
 

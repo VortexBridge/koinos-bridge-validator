@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"sync"
@@ -54,6 +55,16 @@ func StreamKoinosBlocks(
 	// init JSON RPC client
 	rpcCl := kjsonrpc.NewKoinosRPCClient(koinosRPC)
 	rpcClient := rpc.NewJsonRPC(rpcCl)
+	if opts.ExpectedNetworkID != "" {
+		rpcClient = rpc.NewBoundedJsonRPC(koinosRPC)
+	}
+	identity := func(ctx context.Context) (string, error) {
+		id, err := rpcClient.GetChainID(ctx)
+		if err != nil {
+			return "", err
+		}
+		return base64.URLEncoding.EncodeToString(id), nil
+	}
 
 	fmt.Println("connected to Koinos RPC")
 
@@ -76,12 +87,18 @@ func StreamKoinosBlocks(
 			return
 
 		case <-time.After(time.Millisecond * time.Duration(koinosPollingTime)):
+			if !opts.identity(ctx, identity) {
+				continue
+			}
 			headInfo, err := rpcClient.GetHeadInfo(ctx)
 
 			if err != nil {
 				opts.problem()
 				log.Error(err.Error())
 			} else {
+				if !opts.identity(ctx, identity) {
+					continue
+				}
 				if headInfo.HeadTopology == nil {
 					opts.problem()
 					continue
@@ -108,6 +125,9 @@ func StreamKoinosBlocks(
 						opts.problem()
 						log.Error(err.Error())
 					} else {
+						if !opts.identity(ctx, identity) {
+							continue
+						}
 						log.Infof("fetched koinos blocks: %d - %d", fromBlock, toBlock)
 
 						if err := validateBlockBatch(blocks, fromBlock, nbBlocksToFetch); err != nil {

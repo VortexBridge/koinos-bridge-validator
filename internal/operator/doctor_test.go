@@ -77,6 +77,7 @@ func TestDoctorBothChainsAndConcurrentConfigurationChange(t *testing.T) {
 	}))
 	defer koinos.Close()
 	cfg.Bridge.KoinosRpc = koinos.URL
+	cfg.Bridge.KoinosNetworkID = p.NetworkID
 	cfg.Bridge.KoinosContract = p.Contract
 	raw, _ := yaml.Marshal(cfg)
 	if err := os.WriteFile(filepath.Join(base, "config.yml"), raw, 0600); err != nil {
@@ -119,7 +120,7 @@ func doctorFixture(t *testing.T, endpoint string) (*Store, string, util.YamlConf
 	if err := os.Mkdir(base, 0700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := util.YamlConfig{Bridge: util.BridgeConfig{InstanceID: "doctor-fixture", ApiUrl: "127.0.0.1:13000", EthereumRpc: endpoint, KoinosRpc: endpoint, EthereumContract: vectors(t)[0].Profile.Contract, KoinosContract: "1111111111111111111114oLvT2", EthereumPKFile: "/missing/synthetic-key-never-read"}}
+	cfg := util.YamlConfig{Bridge: util.BridgeConfig{InstanceID: "doctor-fixture", ApiUrl: "127.0.0.1:13000", EthereumRpc: endpoint, KoinosRpc: endpoint, EthereumNetworkID: vectors(t)[0].Profile.NetworkID, KoinosNetworkID: "EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", EthereumContract: vectors(t)[0].Profile.Contract, KoinosContract: "1111111111111111111114oLvT2", EthereumPKFile: "/missing/synthetic-key-never-read"}}
 	raw, _ := yaml.Marshal(cfg)
 	if err := os.WriteFile(filepath.Join(base, "config.yml"), raw, 0600); err != nil {
 		t.Fatal(err)
@@ -184,7 +185,7 @@ func TestDoctorReadsRegisteredConfigurationWithoutChangingState(t *testing.T) {
 	s.mu.Lock()
 	s.data.Bindings[0].Profile.NetworkID = "1"
 	s.mu.Unlock()
-	checkStatus(t, s.Doctor(context.Background()), "evm-rpc", "failed")
+	checkStatus(t, s.Doctor(context.Background()), "evm-binding", "failed")
 	// Drift must be caught even when YAML is still valid.
 	f, err := os.OpenFile(filepath.Join(base, "config.yml"), os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {

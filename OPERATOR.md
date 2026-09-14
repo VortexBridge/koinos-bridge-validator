@@ -353,11 +353,56 @@ never executed and the check does not create worker directories or open database
 `checks-passed` means these observation checks passed at the reported time. It is
 not a start permit, release approval or signing readiness. The actual worker
 acquires process/database ownership at startup; the doctor does not reserve
-ports or locks. Peer/token reconciliation, runtime network identity enforcement,
+ports or locks. Peer/token reconciliation,
 disk capacity, old-signer fencing and finality/source verification remain separate
 work. Koinos head reads explicitly remain insufficient for code or irreversible
 finality attestation. The report always sets `signingReady` to false. A successful
 doctor exit cannot enable signing.
+
+## Pin a worker route to its actual networks
+
+New observation routes can pin both RPC network identities in their private
+`config.yml`, alongside the two explicit contract addresses:
+
+```yaml
+bridge:
+  ethereum-network-id: '31337' # Synthetic local EVM example; use the reviewed network ID.
+  koinos-network-id: 'EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==' # Synthetic example only.
+```
+
+Supply both IDs or neither. EVM uses a canonical positive decimal network ID;
+Koinos uses the canonical padded base64url SHA-256 multihash returned by its RPC.
+These are **not** the Vortex protocol chain IDs used by contract signatures.
+Doctor requires both IDs to match the selected instance's saved deployment
+profiles; no pin is inferred from whatever an RPC happens to report.
+
+The worker persists `bridge/.operator/network-binding.json` before opening new
+databases. Restart refuses changed network IDs, changed contracts, missing IDs
+after binding, or damaged markers. Existing unbound checkpoints cannot be adopted
+under newly supplied IDs without a reviewed migration. Use a new route directory;
+do not delete markers, reset state or overwrite registration to bypass review.
+Case-only changes to a valid EVM contract address do not change its identity.
+
+For explicitly bound workers, each chain reads its network ID before and after
+the head read and again after fetching a batch, before processing events or
+advancing checkpoints. Wrong, malformed or unavailable identity responses pause
+that chain's ingestion and report `network-unverified` through the private health
+socket. The other chain can continue observation. The affected chain resumes from
+its retained checkpoint when the expected identity returns; no replacement
+worker is launched. Identity and data requests use the same redirect-refusing
+HTTP client. Identity checks have a five-second deadline; other bound reads time
+out after ten seconds. Bound Koinos responses are limited to 32 MiB and its
+transport only allows identity/head/block reads. Bound EVM RPC errors are
+sanitized before logging private endpoint failures.
+
+This detects inconsistent or misconfigured endpoints, not a dishonest RPC that
+lies consistently about its identity and data. Contract-code attestation,
+cross-provider verification and the existing chain-specific finality/reorg work
+remain required. It does not repair legacy signature-domain omissions or enable
+managed signing. Legacy configurations without either ID retain their old
+streaming behavior; health omits the binding, the panel shows a warning, and
+doctor fails the missing runtime binding check. Previously pinned executable
+snapshots are not upgraded by changing the operator binary or UI.
 
 ## Verification commands
 

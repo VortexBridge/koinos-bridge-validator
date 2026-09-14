@@ -72,6 +72,15 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	add("configuration", "passed", "Configuration and worker identity match local registration. Key files are never opened by this check.")
+	existingRouteData, databaseErr := worker.HasValidatorData(r.BaseDir)
+	binding := networkBinding(cfg)
+	if !binding.Enabled() {
+		add("runtime-network-binding", "failed", "Worker configuration has no pinned network identities. Configure a new route directory with both network IDs; existing unbound checkpoints require reviewed migration.")
+	} else if databaseErr != nil || worker.CheckNetworkBinding(filepath.Join(r.BaseDir, "bridge", ".operator"), binding, existingRouteData) != nil {
+		add("runtime-network-binding", "failed", "Saved worker network/contract binding differs or cannot be verified. Inspect the route locally; do not relabel or reset its data.")
+	} else {
+		add("runtime-network-binding", "passed", "Network identities and contracts are pinned for this route. A compatible worker must verify identities around its read batches; this report does not attest an arbitrary registered executable's behavior.")
+	}
 	releaseOwnership, err := s.lockWorkerOwnership(r.BaseDir, r.InstanceID)
 	if err != nil {
 		add("local-ownership", "failed", "Local ownership cannot be established. Check other instance registrations for duplicate identities, directories or unavailable storage.")
@@ -138,6 +147,14 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 		}
 		if len(matches) != 1 {
 			add(family+"-binding", "failed", "Exactly one saved deployment must match the worker contract and exact private RPC endpoint. Add or reconcile that deployment in this instance.")
+			continue
+		}
+		expected := cfg.Bridge.EthereumNetworkID
+		if family == "koinos" {
+			expected = cfg.Bridge.KoinosNetworkID
+		}
+		if expected != matches[0].Profile.NetworkID {
+			add(family+"-binding", "failed", "The saved deployment network ID differs from the worker's pinned identity. Reconcile the route before observation.")
 			continue
 		}
 		add(family+"-binding", "passed", "Worker contract and RPC match one saved deployment. Token and peer mappings have not been reconciled.")

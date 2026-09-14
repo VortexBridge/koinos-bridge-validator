@@ -74,10 +74,14 @@ func backupTestSource(t *testing.T, root string) (string, *Store) {
 		InstanceID: "backup-test-source", EthereumPK: "DO-NOT-BACKUP-EVM-KEY", KoinosPK: "DO-NOT-BACKUP-KOINOS-KEY", EthereumPKFile: "/DO-NOT-BACKUP-KEY-PATH", KoinosPKFile: "/DO-NOT-BACKUP-KOINOS-PATH",
 		EthereumRpc: "https://example.invalid/DO-NOT-BACKUP-RPC", KoinosRpc: "https://example.invalid/DO-NOT-BACKUP-KOINOS-RPC", ApiUrl: "DO-NOT-BACKUP-API", Reset: true, EthereumBlockStart: 123, KoinosBlockStart: 456,
 		EthereumContract: "0x1111111111111111111111111111111111111111", KoinosContract: "1111111111111111111114oLvT2",
+		EthereumNetworkID: "31337", KoinosNetworkID: "EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
 		Validators: map[string]util.ValidatorConfig{"operator-a": {EthereumAddress: "0x2222222222222222222222222222222222222222", KoinosAddress: "1111111111111111111114oLvT2", ApiUrl: "DO-NOT-BACKUP-PEER"}},
 	}}
 	raw, _ := yaml.Marshal(cfg)
 	mustBackupWrite(t, filepath.Join(base, "config.yml"), raw)
+	if err := worker.EnsureNetworkBinding(filepath.Join(base, "bridge", ".operator"), networkBinding(cfg), false); err != nil {
+		t.Fatal(err)
+	}
 	for i, name := range backupDatabases {
 		db, err := badger.Open(badger.DefaultOptions(filepath.Join(base, "bridge", name)).WithSyncWrites(true).WithLogger(nil))
 		if err != nil {
@@ -273,6 +277,9 @@ func TestEncryptedBackupRecovery(t *testing.T) {
 	if cfg.Bridge.InstanceID == "backup-test-source" || !cfg.Bridge.ObservationOnly || cfg.Bridge.Reset {
 		t.Fatal("restored mode/identity unsafe")
 	}
+	if cfg.Bridge.EthereumNetworkID != "31337" || cfg.Bridge.KoinosNetworkID != "EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==" || worker.CheckNetworkBinding(control, networkBinding(cfg), true) != nil {
+		t.Fatal("restored network binding lost")
+	}
 	dbs, err := openSnapshotDatabases(dest)
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +309,10 @@ func TestEncryptedBackupRecovery(t *testing.T) {
 		}
 		var result interface{}
 		switch req.Method {
+		case "eth_chainId":
+			result = "0x7a69"
+		case "chain.get_chain_id":
+			result = map[string]string{"chain_id": "EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}
 		case "eth_blockNumber":
 			result = "0x0"
 		case "chain.get_head_info":

@@ -1,18 +1,40 @@
 package streamer
 
 import (
+	"context"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
 	"github.com/koinos-bridge/koinos-bridge-validator/proto/build/github.com/koinos-bridge/koinos-bridge-validator/bridge_pb"
 	"github.com/koinos/koinos-proto-golang/koinos/rpc/block_store"
+	"time"
 )
 
 type Options struct {
-	ObserveOnly bool
-	OnProgress  func(uint64)
-	OnProblem   func()
+	ObserveOnly       bool
+	ExpectedNetworkID string
+	OnIdentityProblem func()
+	OnProgress        func(uint64)
+	OnProblem         func()
+}
+
+func (o Options) identity(ctx context.Context, read func(context.Context) (string, error)) bool {
+	if o.ExpectedNetworkID == "" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	id, err := read(ctx)
+	if err != nil || id != o.ExpectedNetworkID {
+		if o.OnIdentityProblem != nil {
+			o.OnIdentityProblem()
+		} else {
+			o.problem()
+		}
+		return false
+	}
+	return true
 }
 
 func selectedOptions(options []Options) Options {
