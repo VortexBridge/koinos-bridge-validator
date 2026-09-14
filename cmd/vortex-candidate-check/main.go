@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,11 +16,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
 )
+
+type boundedLog struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (l *boundedLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(p)
+	remaining := 4096 - l.data.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		l.data.Write(p)
+	}
+	return n, nil
+}
+func (l *boundedLog) String() string { l.mu.Lock(); defer l.mu.Unlock(); return l.data.String() }
 
 type Report struct {
 	SchemaVersion  int      `json:"schemaVersion"`
@@ -100,11 +122,12 @@ func run(report *Report) error {
 	if err := os.WriteFile(filepath.Join(base, "config.yml"), []byte(cfg), 0600); err != nil {
 		return err
 	}
+	logs := &boundedLog{}
 	start := func() (*exec.Cmd, error) {
 		cmd := exec.CommandContext(ctx, "/candidate/validator", "--basedir", base, "--observe-only")
 		cmd.Env = []string{"HOME=/work", "PATH=/usr/bin:/bin"}
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
+		cmd.Stdout = logs
+		cmd.Stderr = logs
 		return cmd, cmd.Start()
 	}
 	control := filepath.Join(base, "bridge", ".operator")
@@ -116,7 +139,7 @@ func run(report *Report) error {
 			}
 			select {
 			case <-ctx.Done():
-				return health, errors.New("candidate did not pass independent health/checkpoint check")
+				return health, fmt.Errorf("candidate did not pass health/checkpoint check; mode=%s evm=%s/%d koinos=%s; bounded synthetic log: %s", health.Mode, health.Chains["evm"].Status, health.Chains["evm"].Height, health.Chains["koinos"].Status, logs.String())
 			case <-time.After(20 * time.Millisecond):
 			}
 		}

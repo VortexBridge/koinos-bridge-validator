@@ -242,7 +242,7 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 	if strictJSON(output, &result.Report) != nil {
 		result.Report = CandidateReport{SchemaVersion: 1, State: "failed", Scope: "isolated-observation-smoke-v1", ArtifactSHA256: record.Artifact.SHA256, Checks: []string{}, Error: "Candidate checker did not return a valid bounded report"}
 	}
-	if runErr != nil || result.Report.SchemaVersion != 1 || result.Report.Scope != "isolated-observation-smoke-v1" || result.Report.ArtifactSHA256 != record.Artifact.SHA256 || result.Report.State != "smoke-passed" || len(result.Report.Checks) != 6 {
+	if runErr != nil || validateCandidateReport(result.Report, record.Artifact.SHA256) != nil {
 		result.Report.State = "failed"
 	}
 	encoded, err := json.MarshalIndent(result, "", "  ")
@@ -250,6 +250,14 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 		return result, err
 	}
 	reportDir := filepath.Join(s.dir, "releases", digest, platform)
+	reportHash := sha256.Sum256(encoded)
+	historyDir := filepath.Join(reportDir, "candidate-history")
+	if err := os.MkdirAll(historyDir, 0700); err != nil {
+		return result, errors.New("cannot preserve candidate history")
+	}
+	if err := atomicFile(historyDir, hex.EncodeToString(reportHash[:])+".json", encoded); err != nil {
+		return result, errors.New("cannot preserve candidate history")
+	}
 	if err := atomicFile(reportDir, "candidate-result.json", encoded); err != nil {
 		return result, errors.New("cannot persist candidate report")
 	}
@@ -257,4 +265,36 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 		return result, fmt.Errorf("candidate smoke checks failed: %s", result.Report.Error)
 	}
 	return result, nil
+}
+
+func validateCandidateReport(report CandidateReport, artifact string) error {
+	expected := []string{"keyless-start-and-both-chain-observation", "signature-exchange-refused", "duplicate-process-excluded", "crash-restart-checkpoint-retained", "graceful-stop", "only-read-rpc-methods"}
+	if report.SchemaVersion != 1 || report.Scope != "isolated-observation-smoke-v1" || report.ArtifactSHA256 != artifact || report.State != "smoke-passed" || report.Error != "" || len(report.Checks) != len(expected) {
+		return errors.New("invalid candidate smoke report")
+	}
+	for i, check := range expected {
+		if report.Checks[i] != check {
+			return errors.New("candidate report omits required smoke check")
+		}
+	}
+	return nil
+}
+func (s *Store) candidateResult(digest, platform, artifact string) *CandidateResult {
+	file, err := OpenBoundedArtifact(filepath.Join(s.dir, "releases", digest, platform, "candidate-result.json"), 32768)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, 32769))
+	if err != nil || len(raw) > 32768 {
+		return nil
+	}
+	var result CandidateResult
+	if strictJSON(raw, &result) != nil || result.ReleaseDigest != digest || result.Platform != platform || result.ArtifactSHA256 != artifact || !hexHash.MatchString(result.CheckerSHA256) || result.FinishedAt.Before(result.StartedAt) {
+		return nil
+	}
+	if validateCandidateReport(result.Report, artifact) != nil {
+		result.Report.State = "failed"
+	}
+	return &result
 }
