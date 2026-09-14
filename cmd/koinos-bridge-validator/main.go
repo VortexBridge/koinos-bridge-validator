@@ -92,6 +92,9 @@ func main() {
 		panic(err)
 	}
 	defer lease.Close()
+	if err := worker.CheckRestoreFence(controlDir, observeOnly); err != nil {
+		panic(err)
+	}
 	_, metadataStatErr := os.Stat(filepath.Join(*baseDir, "bridge", "metadata"))
 	if metadataStatErr != nil && !os.IsNotExist(metadataStatErr) {
 		panic(metadataStatErr)

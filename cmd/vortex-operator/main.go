@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +41,16 @@ func run() error {
 	candidateDigest := flags.String("release-digest", "", "exact staged release digest")
 	checkerPath := flags.String("candidate-checker", "", "reviewed Linux candidate checker executable")
 	checkerHash := flags.String("checker-sha256", "", "reviewed checker digest")
+	backupFile := flags.String("backup-file", "", "absolute encrypted backup file path")
+	restoreBase := flags.String("restore-base", "", "absolute new validator directory for restore")
+	recipient := flags.String("recovery-recipient", "", "public age X25519 recovery recipient")
+	identity := flags.String("recovery-identity-file", "", "private local age recovery identity file (restore only)")
+	cryptoPath := flags.String("backup-crypto", "", "reviewed local backup crypto helper executable")
+	cryptoHash := flags.String("backup-crypto-sha256", "", "reviewed backup crypto executable digest")
+	backupDigest := flags.String("backup-digest", "", "exact recovered backup manifest digest")
+	reviewNote := flags.String("review-note", "", "non-secret restore checkpoint/configuration review note")
+	ethereumHeight := flags.String("review-ethereum-height", "", "exact restored Ethereum checkpoint in decimal")
+	koinosHeight := flags.String("review-koinos-height", "", "exact restored Koinos checkpoint in decimal")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -50,14 +61,44 @@ func run() error {
 	if flags.NArg() > 0 {
 		command = flags.Arg(0)
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test")
+	if flags.NArg() > 1 {
+		return errors.New("provide one command; place all flags before it")
+	}
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+	if command == "backup-create" || command == "backup-restore" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		provider := operator.CryptoProvider{Path: *cryptoPath, SHA256: *cryptoHash}
+		var receipt operator.BackupReceipt
+		if command == "backup-create" {
+			receipt, err = s.CreateBackup(ctx, *workerBase, *backupFile, *recipient, provider)
+		} else {
+			receipt, err = operator.RestoreBackup(ctx, *backupFile, *restoreBase, *identity, provider)
+		}
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(receipt)
+	}
+	if command == "restore-review" {
+		evm, evmErr := strconv.ParseUint(*ethereumHeight, 10, 64)
+		koinos, koinosErr := strconv.ParseUint(*koinosHeight, 10, 64)
+		if evmErr != nil || koinosErr != nil {
+			return errors.New("restore review requires both explicit decimal checkpoint heights")
+		}
+		result, err := operator.ReviewRestoreObservation(*workerBase, *backupDigest, *reviewNote, evm, koinos)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
 	if command == "candidate-test" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

@@ -259,14 +259,20 @@ staged installer remain separate required gates.
 
 ## Verification commands
 
+Encrypted offline backup and observation recovery are documented in
+[BACKUP_RECOVERY.md](BACKUP_RECOVERY.md). Each operator keeps its own recovery
+identity; active approvals and signing authority are not restored from an archive.
+
 ```sh
-go test -race ./internal/operator ./internal/worker ./internal/streamer
-go test ./...
+go test -count=1 -race ./internal/operator ./internal/worker ./internal/streamer
+go test -count=1 ./...
 go vet ./...
 ```
 
 With the existing dependencies cached, prepend `GOPROXY=off GOSUMDB=off` to prevent
-dependency downloads. Governance vectors are generated independently with ethers
+dependency downloads. For the backup test, first build its separate-module helper
+and pass `VORTEX_BACKUP_CRYPTO_TEST_BINARY` as described in the recovery guide.
+Governance vectors are generated independently with ethers
 and protobufjs, using the actual Koinos protobuf source:
 
 ```sh
