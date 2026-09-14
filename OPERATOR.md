@@ -1,6 +1,7 @@
 # Private operator service (implementation in progress)
 
-This branch adds a separate, keyless `vortex-operator` command. The `cmd/koinos-bridge-validator` runtime now supports keyless observation and
+This branch adds a separate `vortex-operator` command without bridge signing keys. Optional
+maintenance endorsements use a separate local scheduling identity. The `cmd/koinos-bridge-validator` runtime now supports keyless observation and
 a private control socket. Do not interpret an operator dashboard connection as
 a running or enrolled validator.
 
@@ -495,3 +496,10 @@ The fixture generator normalizes protobuf defaults to match the checked-in
 AssemblyScript encoder. Vector agreement is not yet proof that the calls pass a
 real contract VM. The audit's existing source/deployment and accounting concerns
 remain open. Do not advertise this branch as production-ready.
+
+## Maintenance schedule exchange
+
+The Updates panel and local CLI support portable operator-endorsed maintenance
+plans. See [MAINTENANCE.md](MAINTENANCE.md) for local identity/policy setup,
+reservation semantics, CLI exchange and synthetic reproduction. Schedule consent
+does not install a release or replace fresh rollout preflight.

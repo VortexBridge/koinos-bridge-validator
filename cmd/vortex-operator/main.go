@@ -1,4 +1,4 @@
-// vortex-operator is the private, keyless operator control plane. The legacy
+// vortex-operator is the private operator control plane without bridge signing keys. The legacy
 // validator binary remains a separate process with a separate lifecycle.
 package main
 
@@ -52,6 +52,9 @@ func run() error {
 	reviewNote := flags.String("review-note", "", "non-secret restore checkpoint/configuration review note")
 	ethereumHeight := flags.String("review-ethereum-height", "", "exact restored Ethereum checkpoint in decimal")
 	koinosHeight := flags.String("review-koinos-height", "", "exact restored Koinos checkpoint in decimal")
+	maintenanceFile := flags.String("maintenance-file", "", "private portable maintenance envelope JSON")
+	maintenanceDigest := flags.String("maintenance-digest", "", "exact locally reviewed maintenance plan digest")
+	maintenanceRevision := flags.String("maintenance-revision", "", "current local revision for endorsement")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -65,8 +68,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -92,6 +95,43 @@ func run() error {
 			return errors.New("unknown local instance; create it using instance-create first")
 		}
 		s = selected
+	}
+	if command == "maintenance-init" {
+		member, err := s.InitializeMaintenance()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(member)
+	}
+	if command == "maintenance-status" {
+		return json.NewEncoder(os.Stdout).Encode(s.MaintenanceState(time.Now().UTC()))
+	}
+	if command == "maintenance-verify" || command == "maintenance-endorse" {
+		envelope, err := operator.ReadMaintenanceEnvelope(*maintenanceFile)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if command == "maintenance-endorse" {
+			revision, err := strconv.ParseUint(*maintenanceRevision, 10, 64)
+			if err != nil {
+				return errors.New("provide --maintenance-revision from current local status")
+			}
+			result, err := s.EndorseMaintenanceEnvelope(operator.EndorseMaintenanceRequest{Envelope: envelope, Digest: *maintenanceDigest, ExpectedRevision: revision}, now)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(os.Stdout).Encode(result)
+		}
+		policy, err := s.MaintenancePolicy(now)
+		if err != nil {
+			return err
+		}
+		report, err := operator.VerifyMaintenance(envelope, policy, now)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(report)
 	}
 	if command == "worker-prepare" {
 		preparation, err := s.PrepareWorker(*workerBinary, *workerSHA)
@@ -208,7 +248,7 @@ func run() error {
 		defer cancel()
 		server.Shutdown(shutdown)
 	}()
-	fmt.Printf("Private operator API: http://%s\nMode: observation-only; no signing keys loaded.\nAccess token file: %s\n", l.Addr(), filepath.Join(*dir, "access-token"))
+	fmt.Printf("Private operator API: http://%s\nMode: observation-only; no bridge signing keys loaded.\nAccess token file: %s\n", l.Addr(), filepath.Join(*dir, "access-token"))
 	err = server.Serve(l)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

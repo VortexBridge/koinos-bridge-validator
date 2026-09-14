@@ -122,6 +122,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/maintenance" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.MaintenanceState(time.Now().UTC()))
+	case r.URL.Path == "/v1/maintenance/verify" && r.Method == "POST":
+		var req MaintenanceEnvelope
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		now := time.Now().UTC()
+		policy, err := s.Store.MaintenancePolicy(now)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		result, err := VerifyMaintenance(req, policy, now)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
+	case r.URL.Path == "/v1/maintenance/endorse" && r.Method == "POST":
+		var req EndorseMaintenanceRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.EndorseMaintenanceEnvelope(req, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
 	case r.URL.Path == "/v1/worker/setup" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.SetupState())
 	case r.URL.Path == "/v1/worker/setup/preview" && r.Method == "POST":
