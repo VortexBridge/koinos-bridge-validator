@@ -321,7 +321,43 @@ directories are not activated or shown as slots; inspect them locally before cle
 There is no automatic slot deletion or identity migration command in this build.
 
 This supplies local instance management. Assisted route-to-worker configuration,
-key provisioning, doctor checks and the installation wizard remain separate work.
+key provisioning and the installation wizard remain separate work.
+
+## Observation preflight
+
+The Validator page's **Run preflight checks** action diagnoses the selected
+instance. Failures appear first. The equivalent local command is:
+
+```sh
+vortex-operator --data /absolute/private/operator --instance route-a doctor
+```
+
+As with other offline CLI commands, stop the operator API before opening its
+store through the CLI; stopping the API does not stop its workers. The console
+can run the same check while the API is serving. The CLI writes a sanitized JSON
+report and exits nonzero when checks need attention. HTTP exposes it through
+authenticated `POST /v1/instances/NAME/worker/doctor` with an empty JSON object.
+It accepts no filesystem paths or ad hoc RPC endpoints.
+
+The check verifies the registered configuration and binary bytes, directory
+permissions, local ownership conflicts, explicit loopback API, observation data
+marker and outstanding restore review. Both worker contract/RPC pairs must each
+match exactly one saved deployment in the selected instance. RPC strings are
+compared exactly, including credentials/trailing slashes, without displaying them.
+It then performs fresh allowlisted contract reads against those bindings. Wrong
+network identity, protocol chain ID, pinned code mismatch, unavailable RPCs and
+configuration changes during the check produce failures. The two chain reads run
+concurrently with a bounded deadline. Key files are never opened, binaries are
+never executed and the check does not create worker directories or open databases.
+
+`checks-passed` means these observation checks passed at the reported time. It is
+not a start permit, release approval or signing readiness. The actual worker
+acquires process/database ownership at startup; the doctor does not reserve
+ports or locks. Peer/token reconciliation, runtime network identity enforcement,
+disk capacity, old-signer fencing and finality/source verification remain separate
+work. Koinos head reads explicitly remain insufficient for code or irreversible
+finality attestation. The report always sets `signingReady` to false. A successful
+doctor exit cannot enable signing.
 
 ## Verification commands
 

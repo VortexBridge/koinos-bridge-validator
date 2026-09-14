@@ -65,8 +65,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "candidate-test" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, candidate-test, backup-create, backup-restore, restore-review, instance-create, instances, doctor")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -92,6 +92,18 @@ func run() error {
 			return errors.New("unknown local instance; create it using instance-create first")
 		}
 		s = selected
+	}
+	if command == "doctor" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		report := s.Doctor(ctx)
+		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
+			return err
+		}
+		if report.Status != "checks-passed" {
+			return errors.New("preflight needs attention; see the diagnostic report")
+		}
+		return nil
 	}
 	if command == "backup-create" || command == "backup-restore" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

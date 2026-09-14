@@ -122,6 +122,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/worker/doctor" && r.Method == "POST":
+		var req struct{}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		select {
+		case s.reads <- struct{}{}:
+			defer func() { <-s.reads }()
+		default:
+			fail(w, 429, "observation capacity busy; retry later")
+			return
+		}
+		writeJSON(w, 200, s.Store.Doctor(r.Context()))
 	case r.URL.Path == "/v1/worker" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.WorkerStatus(r.Context()))
 	case r.URL.Path == "/v1/worker/start" && r.Method == "POST":
