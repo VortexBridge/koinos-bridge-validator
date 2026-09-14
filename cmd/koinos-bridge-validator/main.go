@@ -20,6 +20,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/api"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/streamer"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
@@ -68,6 +69,7 @@ func main() {
 	baseDir := flag.StringP(basedirOption, "d", basedirDefault, "the base directory")
 
 	observeFlag := flag.Bool("observe-only", false, "observe and store events without loading keys or exchanging signatures")
+	unlockFD := flag.Int("unlock-passphrase-fd", -1, "inherited pipe for encrypted signing vault; omitted for a local hidden prompt")
 	flag.Parse()
 
 	// Expand ~ to the home directory (otherwise you wind up with /home/user/~/.koinos)
@@ -161,28 +163,49 @@ func main() {
 	var ethPrivateKey *ecdsa.PrivateKey
 	var koinosAddress, ethAddress string
 	if !observeOnly {
-		koinosPK, err = worker.LoadKey(koinosPK, yamlConfig.Bridge.KoinosPKFile, false)
-		if err != nil {
-			panic(err)
+		if yamlConfig.Bridge.SigningVaultFile != "" {
+			if ethPK != "" || koinosPK != "" || yamlConfig.Bridge.EthereumPKFile != "" || yamlConfig.Bridge.KoinosPKFile != "" {
+				panic("encrypted signing vault cannot be combined with legacy key sources")
+			}
+			if yamlConfig.Bridge.EthereumSignerAddress == "" || yamlConfig.Bridge.KoinosSignerAddress == "" {
+				panic("encrypted signing requires both reviewed public signer addresses")
+			}
+			keys, public, err := keyvault.Unlock(yamlConfig.Bridge.SigningVaultFile, yamlConfig.Bridge.EthereumSignerAddress, yamlConfig.Bridge.KoinosSignerAddress, func() ([]byte, error) {
+				return keyvault.ReadSecret(*unlockFD, "Validator vault passphrase")
+			})
+			if err != nil {
+				panic(err)
+			}
+			defer keys.Close()
+			ethPrivateKey, koinosPKbytes = keys.EVM, keys.Koinos
+			ethAddress, koinosAddress = public.EVMAddress, public.KoinosAddress
+		} else {
+			if *unlockFD != -1 {
+				panic("unlock descriptor requires an encrypted signing vault")
+			}
+			koinosPK, err = worker.LoadKey(koinosPK, yamlConfig.Bridge.KoinosPKFile, false)
+			if err != nil {
+				panic(err)
+			}
+			ethPK, err = worker.LoadKey(ethPK, yamlConfig.Bridge.EthereumPKFile, false)
+			if err != nil {
+				panic(err)
+			}
+			koinosPKbytes, err = koinosUtil.DecodeWIF(koinosPK)
+			if err != nil {
+				panic("invalid Koinos signing key")
+			}
+			koinosKey, err := koinosUtil.NewKoinosKeysFromBytes(koinosPKbytes)
+			if err != nil {
+				panic("invalid Koinos signing key")
+			}
+			koinosAddress = base58.Encode(koinosKey.AddressBytes())
+			ethPrivateKey, err = crypto.HexToECDSA(ethPK)
+			if err != nil {
+				panic("invalid EVM signing key")
+			}
+			ethAddress = crypto.PubkeyToAddress(ethPrivateKey.PublicKey).Hex()
 		}
-		ethPK, err = worker.LoadKey(ethPK, yamlConfig.Bridge.EthereumPKFile, false)
-		if err != nil {
-			panic(err)
-		}
-		koinosPKbytes, err = koinosUtil.DecodeWIF(koinosPK)
-		if err != nil {
-			panic("invalid Koinos signing key")
-		}
-		koinosKey, err := koinosUtil.NewKoinosKeysFromBytes(koinosPKbytes)
-		if err != nil {
-			panic("invalid Koinos signing key")
-		}
-		koinosAddress = base58.Encode(koinosKey.AddressBytes())
-		ethPrivateKey, err = crypto.HexToECDSA(ethPK)
-		if err != nil {
-			panic("invalid EVM signing key")
-		}
-		ethAddress = crypto.PubkeyToAddress(ethPrivateKey.PublicKey).Hex()
 		// Excludes duplicate keys across local instance directories under this OS user.
 		// This cannot fence clones on a different host or another OS account.
 		configHome, err := os.UserConfigDir()

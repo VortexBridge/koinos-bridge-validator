@@ -77,6 +77,13 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 		return report
 	}
 	add("configuration", "passed", "Configuration and worker identity match local registration. Key files are never opened by this check.")
+	if r.Mode == "signing" {
+		if cfg.Bridge.SigningVaultFile == "" {
+			add("signing-key-custody", "failed", "This signing worker uses legacy plaintext key files. Provision an encrypted signing vault locally and review the configuration and release before re-registering.")
+		} else {
+			add("signing-key-custody", "unknown", "Configuration selects an encrypted vault and pins both public identities. The operator never opens the vault or requests its password. Supported Linux runtime unlock requires a non-root user, no swap or process memory locking, and disabled crash dumps; host administration, hibernation and recovery custody still need review.")
+		}
+	}
 	existingRouteData, databaseErr := worker.HasValidatorData(r.BaseDir)
 	binding := networkBinding(cfg)
 	if !binding.Enabled() {

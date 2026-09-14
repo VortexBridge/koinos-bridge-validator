@@ -99,6 +99,17 @@ func workerConfig(base string) ([]byte, util.YamlConfig, error) {
 	if cfg.Bridge.EthereumPK != "" || cfg.Bridge.KoinosPK != "" {
 		return nil, cfg, errors.New("reviewed worker configuration must not contain inline signing keys")
 	}
+	if cfg.Bridge.SigningVaultFile != "" {
+		if !filepath.IsAbs(cfg.Bridge.SigningVaultFile) || cfg.Bridge.EthereumPKFile != "" || cfg.Bridge.KoinosPKFile != "" {
+			return nil, cfg, errors.New("encrypted signing requires one absolute vault reference and no legacy key sources")
+		}
+		if _, err := addressBytes("evm", cfg.Bridge.EthereumSignerAddress); err != nil {
+			return nil, cfg, errors.New("encrypted signing requires a valid EVM public identity")
+		}
+		if _, err := addressBytes("koinos", cfg.Bridge.KoinosSignerAddress); err != nil {
+			return nil, cfg, errors.New("encrypted signing requires a valid Koinos public identity")
+		}
+	}
 	if cfg.Bridge.Reset {
 		return nil, cfg, errors.New("managed worker cannot use reset on startup")
 	}
@@ -163,7 +174,7 @@ func (s *Store) RegisterWorker(base, binary, expectedHash string) (WorkerRegistr
 	if err != nil {
 		return WorkerRegistration{}, err
 	}
-	if mode == "signing" && (cfg.Bridge.EthereumPKFile == "" || cfg.Bridge.KoinosPKFile == "") {
+	if mode == "signing" && cfg.Bridge.SigningVaultFile == "" && (cfg.Bridge.EthereumPKFile == "" || cfg.Bridge.KoinosPKFile == "") {
 		return WorkerRegistration{}, errors.New("signing worker registration requires external key-file references")
 	}
 	if err := s.pinWorkerBinary(binary, expectedHash); err != nil {

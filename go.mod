@@ -20,6 +20,8 @@ require (
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multihash v0.1.0
 	go.uber.org/zap v1.17.0
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+	golang.org/x/sys v0.0.0-20221010170243-090e33056c14
 	gopkg.in/yaml.v2 v2.4.0
 )
 

@@ -161,6 +161,9 @@ func publicBackupConfig(cfg util.YamlConfig) util.YamlConfig {
 	b.KoinosPK = ""
 	b.EthereumPKFile = ""
 	b.KoinosPKFile = ""
+	b.SigningVaultFile = ""
+	b.EthereumSignerAddress = ""
+	b.KoinosSignerAddress = ""
 	b.EthereumRpc = ""
 	b.KoinosRpc = ""
 	b.ApiUrl = ""
@@ -610,7 +613,7 @@ func ReviewRestoreObservation(base, digest, note string, ethereumHeight, koinosH
 		return nil, err
 	}
 	b := cfg.Bridge
-	if !b.ObservationOnly || b.Reset || b.EthereumPK != "" || b.KoinosPK != "" || b.EthereumPKFile != "" || b.KoinosPKFile != "" || len(cfg.Global) != 0 {
+	if !b.ObservationOnly || b.Reset || b.EthereumPK != "" || b.KoinosPK != "" || b.EthereumPKFile != "" || b.KoinosPKFile != "" || b.SigningVaultFile != "" || len(cfg.Global) != 0 {
 		return nil, errors.New("restored observer must remain keyless, observation-only, without reset or global overrides")
 	}
 	public, _ := yaml.Marshal(publicBackupConfig(cfg))

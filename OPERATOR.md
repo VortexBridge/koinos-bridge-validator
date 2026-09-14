@@ -166,6 +166,12 @@ The `data-mode` marker prevents silently turning observation checkpoints into
 signing history, or adopting existing signing data as observation data. Use
 separate candidate directories; a mode-migration workflow is not yet implemented.
 
+The supported Linux encrypted-key workflow is documented in [KEY_CUSTODY.md](KEY_CUSTODY.md).
+It adds local generation/import, hidden-terminal or inherited-pipe unlock, public
+identity pins and enforced memory/crash-dump controls. The operator never opens
+the vault, and managed signing remains disabled. Legacy plaintext key files now
+require attention in the doctor report.
+
 For the legacy standalone signing command, `ethereum-pk-file` and `koinos-pk-file`
 accept local regular files with no group/world permissions; symlinks are refused.
 Do not supply both inline and file values for a key. Local per-public-address
@@ -181,8 +187,9 @@ configuration must contain no inline keys and must not request a database reset.
 With no existing `data-mode` marker, registration creates an observation-worker
 record. An existing private `data-mode` marker may instead identify a `signing`
 worker that was already started through an independently reviewed host service.
-That signing configuration must reference both keys through external key files;
-inline keys are refused. The operator records the file paths as part of the
+That signing configuration must reference either both external legacy key files
+or one encrypted vault with both public identities pinned; inline keys and mixed
+sources are refused. The operator records the file paths as part of the
 configuration digest but never opens the key files. Stop the operator service
 first; registration does not stop an independently running validator.
 

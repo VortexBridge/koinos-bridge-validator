@@ -71,7 +71,8 @@ func backupTestSource(t *testing.T, root string) (string, *Store) {
 		t.Fatal(err)
 	}
 	cfg := util.YamlConfig{Global: map[string]interface{}{"synthetic-secret": "DO-NOT-BACKUP-GLOBAL"}, Bridge: util.BridgeConfig{
-		InstanceID: "backup-test-source", EthereumPK: "DO-NOT-BACKUP-EVM-KEY", KoinosPK: "DO-NOT-BACKUP-KOINOS-KEY", EthereumPKFile: "/DO-NOT-BACKUP-KEY-PATH", KoinosPKFile: "/DO-NOT-BACKUP-KOINOS-PATH",
+		SigningVaultFile: "DO-NOT-BACKUP-VAULT",
+		InstanceID:       "backup-test-source", EthereumPK: "DO-NOT-BACKUP-EVM-KEY", KoinosPK: "DO-NOT-BACKUP-KOINOS-KEY", EthereumPKFile: "/DO-NOT-BACKUP-KEY-PATH", KoinosPKFile: "/DO-NOT-BACKUP-KOINOS-PATH",
 		EthereumRpc: "https://example.invalid/DO-NOT-BACKUP-RPC", KoinosRpc: "https://example.invalid/DO-NOT-BACKUP-KOINOS-RPC", ApiUrl: "DO-NOT-BACKUP-API", Reset: true, EthereumBlockStart: 123, KoinosBlockStart: 456,
 		EthereumContract: "0x1111111111111111111111111111111111111111", KoinosContract: "1111111111111111111114oLvT2",
 		EthereumNetworkID: "31337", KoinosNetworkID: "EiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
@@ -335,6 +336,13 @@ func TestEncryptedBackupRecovery(t *testing.T) {
 	cfg.Bridge.KoinosRpc = rpc.URL
 	cfg.Bridge.ApiUrl = apiAddress
 	reviewedRaw, _ := yaml.Marshal(cfg)
+	cfg.Bridge.SigningVaultFile = "/deliberately-missing-restored-vault"
+	vaultConfig, _ := yaml.Marshal(cfg)
+	mustBackupWrite(t, filepath.Join(dest, "config.yml"), vaultConfig)
+	if _, err := ReviewRestoreObservation(dest, receipt.ManifestSHA256, "reviewed synthetic checkpoints", 5, 9); err == nil || !strings.Contains(err.Error(), "remain keyless") {
+		t.Fatal("restore review accepted a vault reference")
+	}
+	cfg.Bridge.SigningVaultFile = ""
 	mustBackupWrite(t, filepath.Join(dest, "config.yml"), reviewedRaw)
 	if _, err := ReviewRestoreObservation(dest, strings.Repeat("0", 64), "reviewed synthetic checkpoints", 5, 9); err == nil {
 		t.Fatal("wrong backup review accepted")

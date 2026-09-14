@@ -42,14 +42,17 @@ type TokenConfig struct {
 }
 
 type BridgeConfig struct {
-	ObservationOnly      bool   `yaml:"observation-only"`
-	EthereumPKFile       string `yaml:"ethereum-pk-file"`
-	KoinosPKFile         string `yaml:"koinos-pk-file"`
-	Reset                bool   `yaml:"reset"`
-	InstanceID           string `yaml:"instance-id"`
-	LogLevel             string `yaml:"log-level"`
-	SignaturesExpiration uint   `yaml:"signatures-expiration"`
-	ApiUrl               string `yaml:"api-url"`
+	ObservationOnly       bool   `yaml:"observation-only"`
+	EthereumPKFile        string `yaml:"ethereum-pk-file"`
+	KoinosPKFile          string `yaml:"koinos-pk-file"`
+	SigningVaultFile      string `yaml:"signing-vault-file,omitempty"`
+	EthereumSignerAddress string `yaml:"ethereum-signer-address,omitempty"`
+	KoinosSignerAddress   string `yaml:"koinos-signer-address,omitempty"`
+	Reset                 bool   `yaml:"reset"`
+	InstanceID            string `yaml:"instance-id"`
+	LogLevel              string `yaml:"log-level"`
+	SignaturesExpiration  uint   `yaml:"signatures-expiration"`
+	ApiUrl                string `yaml:"api-url"`
 
 	EthereumRpc             string `yaml:"ethereum-rpc"`
 	EthereumNetworkID       string `yaml:"ethereum-network-id,omitempty"`

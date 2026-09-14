@@ -109,6 +109,60 @@ func TestDoctorBothChainsAndConcurrentConfigurationChange(t *testing.T) {
 	checkStatus(t, s.Doctor(context.Background()), "koinos-binding", "failed")
 }
 
+func TestDoctorEncryptedKeyCustodyDoesNotReadVault(t *testing.T) {
+	rpc := fakeEVM(t, "0x7a69")
+	defer rpc.Close()
+	s, base, cfg := doctorFixture(t, rpc.URL)
+	cfg.Bridge.SigningVaultFile = filepath.Join(base, "deliberately-missing.vault")
+	cfg.Bridge.EthereumPKFile = ""
+	cfg.Bridge.KoinosPKFile = ""
+	cfg.Bridge.EthereumSignerAddress = "0x1111111111111111111111111111111111111111"
+	cfg.Bridge.KoinosSignerAddress = "1111111111111111111114oLvT2"
+	write := func() {
+		raw, err := yaml.Marshal(cfg)
+		if err != nil || os.WriteFile(filepath.Join(base, "config.yml"), raw, 0600) != nil {
+			t.Fatal("cannot write fixture")
+		}
+		r, err := s.registration()
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := sha256.Sum256(raw)
+		r.ConfigSHA256 = hex.EncodeToString(h[:])
+		r.Mode = "signing"
+		encoded, _ := json.Marshal(r)
+		if err := atomicFile(s.dir, "worker.json", encoded); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	report := s.Doctor(context.Background())
+	checkStatus(t, report, "signing-key-custody", "unknown")
+	if report.SigningReady {
+		t.Fatal("vault configuration granted signing authority")
+	}
+	if _, err := os.Lstat(cfg.Bridge.SigningVaultFile); !os.IsNotExist(err) {
+		t.Fatal("doctor touched secret storage")
+	}
+	cfg.Bridge.EthereumPKFile = "/unused-legacy-key"
+	write()
+	if _, _, err := workerConfig(base); err == nil {
+		t.Fatal("allowed conflicting encrypted and plaintext sources")
+	}
+	cfg.Bridge.SigningVaultFile = ""
+	cfg.Bridge.KoinosPKFile = "/unused-legacy-koinos"
+	write()
+	checkStatus(t, s.Doctor(context.Background()), "signing-key-custody", "failed")
+	cfg.Bridge.EthereumPKFile = ""
+	cfg.Bridge.KoinosPKFile = ""
+	cfg.Bridge.SigningVaultFile = filepath.Join(base, "deliberately-missing.vault")
+	cfg.Bridge.EthereumSignerAddress = "invalid"
+	write()
+	if _, _, err := workerConfig(base); err == nil {
+		t.Fatal("accepted invalid encrypted-vault identity pin")
+	}
+}
+
 func doctorFixture(t *testing.T, endpoint string) (*Store, string, util.YamlConfig) {
 	t.Helper()
 	s, err := OpenStore(privateDir(t))
