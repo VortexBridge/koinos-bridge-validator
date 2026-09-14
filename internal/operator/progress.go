@@ -160,6 +160,25 @@ func (s *Store) readProgressWindow() (ProgressWindow, error) {
 	return window, nil
 }
 
+func (s *Store) readProgressReceipt(id string) (ProgressWindow, error) {
+	if !slug.MatchString(id) {
+		return ProgressWindow{}, errors.New("invalid progress receipt ID")
+	}
+	current, currentErr := s.readProgressWindow()
+	if currentErr == nil && current.ID == id {
+		return current, nil
+	}
+	raw, err := worker.ReadPrivateFile(filepath.Join(s.dir, "progress-history", id+".json"), 128<<10)
+	if err != nil {
+		return ProgressWindow{}, errors.New("progress receipt is unavailable")
+	}
+	var archived ProgressWindow
+	if strictJSON(raw, &archived) != nil || archived.ID != id || archived.InstanceID != s.InstanceID() || !validProgressReceipt(archived) {
+		return ProgressWindow{}, errors.New("progress receipt is invalid")
+	}
+	return archived, nil
+}
+
 func validProgressReceipt(w ProgressWindow) bool {
 	if !validProgressSnapshot(w.Baseline) || w.Evaluation.ActivationReady || w.Evaluation.Reason == "" {
 		return false

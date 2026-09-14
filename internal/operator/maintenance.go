@@ -453,5 +453,9 @@ func (s *Store) MaintenanceState(now time.Time) map[string]interface{} {
 	} else {
 		result["policyError"] = err.Error()
 	}
+	waveResults := s.waveResultInventoryLocked()
+	result["waveResults"] = waveResults.Results
+	result["waveResultProblem"] = waveResults.Problem
+	result["waveResultNotice"] = waveResults.Notice
 	return result
 }

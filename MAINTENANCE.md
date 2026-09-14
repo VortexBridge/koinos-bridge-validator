@@ -256,3 +256,47 @@ for the UI. This generator creates no worker or RPC. The runtime evidence in the
 root implementation folder additionally records a separately built observation
 worker against a loopback synthetic RPC; its reported network identifiers are
 fixture inputs, not live deployment evidence.
+
+## Signed result for the next wave
+
+After an installer records the planned release as installed, the updated signing
+worker must complete a progress window inside its own endorsed maintenance window.
+The result is eligible only when the same process records activity and local-address
+signature changes in both bridge directions. An initial `release-adopt` record is
+not an installed-update result and cannot satisfy this step.
+
+In **Coordinate maintenance → Share the completed wave result**, review the same
+fully endorsed plan, enter the completed progress-window ID, and record the result.
+The service rechecks the local installed-release binding, progress receipt, route,
+plan, policy, wave position, timestamps and current revision. It stores the result
+as a private immutable file before returning its Ed25519 signature. Export that
+JSON to the operator in the next scheduled wave. Exact retries return the retained
+result; changed evidence must use a new ID.
+
+The offline equivalents are:
+
+```sh
+vortex-operator --data /private/operator --instance my-route \
+  --maintenance-file /private/endorsed-plan.json \
+  --maintenance-revision CURRENT_REVISION \
+  --wave-result-id first-wave-result --progress-id completed-progress \
+  wave-result-create
+vortex-operator --data /private/next-operator --instance my-route \
+  --maintenance-file /private/endorsed-plan.json \
+  --wave-result-file /private/first-wave-result.json wave-result-verify
+vortex-operator --data /private/operator --instance my-route wave-results
+```
+
+The next operator imports the signed JSON in its update-readiness form. Only the
+result from the immediately preceding window in the same fully endorsed plan and
+locally reviewed policy can pass the prior-wave check. Modified signatures,
+release/configuration identities, route bindings, counters, timestamps or wave
+positions are rejected. The first wave must leave this field empty.
+
+The signature authenticates the reporting operator's retained local evidence. It
+is not remote attestation and does not independently verify the bridge signatures,
+chain finality, current membership, host independence or every declared route-stage
+threshold. Fresh participation must still be collected before each wave. The
+installer is not implemented, so current ordinary installations cannot yet reach
+the required `installed` state through the console; this result protocol does not
+enable or simulate installation.

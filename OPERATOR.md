@@ -333,9 +333,10 @@ Readiness receipt IDs are immutable: an exact retry returns the original receipt
 while different evidence needs a new ID. Receipts expire after at most 30 seconds
 and always remain non-authorizing in this implementation. Signed worker telemetry
 does not yet prove bridge signing participation or every route-stage threshold;
-later-wave success receipts and the install/verify/recovery state machine are also
-missing. Those conditions remain visibly blocked and `installerEnabled` remains
-false. Do not use a receipt as permission to stop or replace a validator.
+later waves therefore require the immediately preceding operator's signed result.
+The install/verify/recovery state machine remains missing. Those conditions stay
+visibly blocked and `installerEnabled` remains false. Do not use a receipt as
+permission to stop or replace a validator.
 
 The fixed `cmd/vortex-candidate-check` program can be built for the local Docker
 engine's native Linux architecture with `CGO_ENABLED=0`. Review its source and

@@ -21,6 +21,7 @@ type UpdateReadinessRequest struct {
 	Platform               string                           `json:"platform"`
 	BackupID               string                           `json:"backupId"`
 	ParticipationResponses []SignedParticipationObservation `json:"participationResponses"`
+	PriorWaveResult        *SignedWaveResult                `json:"priorWaveResult,omitempty"`
 }
 
 type UpdateReadinessCheck struct {
@@ -184,7 +185,7 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		Revision: revision, ReleaseDigest: req.ReleaseDigest, Platform: req.Platform, BackupID: req.BackupID,
 		CheckedAt: now, ExpiresAt: now.Add(30 * time.Second), State: "blocked", ActivationReady: false,
 		Checks: []UpdateReadinessCheck{},
-		Notice: "Point-in-time local evidence only. This receipt cannot authorize installation. Verified signing quorum, prior-wave evidence and the installer remain unavailable.",
+		Notice: "Point-in-time local evidence only. This receipt cannot authorize installation. Verified signing quorum and the installer remain unavailable; later waves also require the immediately preceding signed result.",
 	}
 
 	current, currentErr := s.CurrentRelease()
@@ -313,18 +314,31 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Authenticated worker responses do not yet verify bridge signing participation or route-stage quorum."))
 		}
 		request, readErr := s.readLocalParticipation()
+		policy, policyErr := s.MaintenancePolicy(now)
 		wave := -1
-		if readErr == nil {
+		if readErr == nil && policyErr == nil {
 			for i, window := range request.Envelope.Plan.Windows {
 				if window.InstanceID == s.InstanceID() {
 					wave = i
 				}
 			}
 		}
-		if wave == 0 {
+		if readErr != nil || policyErr != nil {
+			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "The local maintenance plan or policy is unavailable for prior-wave verification."))
+		} else if wave == 0 && req.PriorWaveResult == nil {
 			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "passed", "This operator is the first scheduled wave; no preceding update receipt is required."))
+		} else if wave == 0 {
+			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "The first scheduled wave must not rely on an unrelated prior-wave result."))
 		} else if wave > 0 {
-			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "A signed, fresh successful result from the preceding wave is not implemented."))
+			if req.PriorWaveResult == nil {
+				receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "Import the signed result from the immediately preceding maintenance wave."))
+			} else if verifiedWave, err := VerifyWaveResult(*req.PriorWaveResult, request.Envelope, policy, now); err != nil {
+				receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", err.Error()))
+			} else if verifiedWave.Wave != wave-1 || verifiedWave.InstanceID != request.Envelope.Plan.Windows[wave-1].InstanceID {
+				receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "The signed result is not from the immediately preceding maintenance wave."))
+			} else {
+				receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "passed", "The immediately preceding operator signed installed-release and two-direction signing-progress evidence for this plan."))
+			}
 		} else {
 			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "This operator has no matching maintenance window."))
 		}

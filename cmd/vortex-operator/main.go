@@ -57,6 +57,9 @@ func run() error {
 	maintenanceFile := flags.String("maintenance-file", "", "private portable maintenance envelope JSON")
 	maintenanceDigest := flags.String("maintenance-digest", "", "exact locally reviewed maintenance plan digest")
 	maintenanceRevision := flags.String("maintenance-revision", "", "current local revision for endorsement")
+	waveResultFile := flags.String("wave-result-file", "", "private signed maintenance wave-result JSON")
+	waveResultID := flags.String("wave-result-id", "", "unique lowercase local wave-result ID")
+	progressID := flags.String("progress-id", "", "completed local signing-progress window ID")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -70,8 +73,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -100,6 +103,40 @@ func run() error {
 	}
 	if command == "participation-status" {
 		return json.NewEncoder(os.Stdout).Encode(s.ParticipationState(time.Now().UTC()))
+	}
+	if command == "wave-results" {
+		return json.NewEncoder(os.Stdout).Encode(s.WaveResultInventory())
+	}
+	if command == "wave-result-create" || command == "wave-result-verify" {
+		envelope, err := operator.ReadMaintenanceEnvelope(*maintenanceFile)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		if command == "wave-result-create" {
+			revision, err := strconv.ParseUint(*maintenanceRevision, 10, 64)
+			if err != nil {
+				return errors.New("provide --maintenance-revision from current local status")
+			}
+			result, err := s.RecordWaveResult(operator.RecordWaveResultRequest{ID: *waveResultID, ExpectedRevision: revision, Envelope: envelope, ProgressID: *progressID}, now)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(os.Stdout).Encode(result)
+		}
+		result, err := operator.ReadSignedWaveResult(*waveResultFile)
+		if err != nil {
+			return err
+		}
+		policy, err := s.MaintenancePolicy(now)
+		if err != nil {
+			return err
+		}
+		verified, err := operator.VerifyWaveResult(result, envelope, policy, now)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(verified)
 	}
 	if command == "participation-begin" {
 		envelope, err := operator.ReadMaintenanceEnvelope(*maintenanceFile)
