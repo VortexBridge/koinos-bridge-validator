@@ -503,3 +503,37 @@ The Updates panel and local CLI support portable operator-endorsed maintenance
 plans. See [MAINTENANCE.md](MAINTENANCE.md) for local identity/policy setup,
 reservation semantics, CLI exchange and synthetic reproduction. Schedule consent
 does not install a release or replace fresh rollout preflight.
+
+## Process-scoped transfer activity
+
+Private worker health now includes separate `evm-to-koinos` and `koinos-to-evm`
+activity summaries, displayed on the Validator panel. Tracking begins before the
+worker starts streaming. Each summary records successful writes, new records,
+changed signatures attributed to the configured local address, other changed
+signatures, and transitions into the stored completed status. It includes its
+tracking start and last successful-write timestamps. Counters are decimal JSON
+strings, preserving the full uint64 range in browser consumers.
+
+The transaction store compares the prior durable record with the exact serialized
+bytes written successfully. Identical writes and signature reordering do not
+create new-record/signature/completion counts. Failed writes are excluded. If the
+prior record cannot be read or interpreted, signature shape is ambiguous, or a
+counter saturates, the summary stays incomplete for that process. Telemetry read
+failure does not veto a write that the existing storage path can still commit.
+No payload IDs, signature bytes or private endpoints are exported in activity.
+
+These are in-memory counters, not totals across the database. Restart starts a
+new tracking interval; existing durable records are not automatically recounted.
+Repeated initialization cannot reset the current interval or change its local
+address attribution. Compare only snapshots from the same instance, PID, process
+start, tracking start and reviewed artifact/configuration before drawing progress
+conclusions. The two directions are sampled separately and do not form a globally
+atomic transaction snapshot.
+
+Stored signatures attributed to a local address do not prove that this process
+created or cryptographically validated them. A stored completion transition is
+not an independent receipt/finality check. The counters retain the legacy event,
+signature and status semantics, including their unresolved verification risks.
+They establish recorded activity beyond empty block polling; they do not prove
+current quorum, peer/API/frontend participation, safe signing or update readiness.
+Older workers omit activity; consumers must treat that as unknown rather than zero.

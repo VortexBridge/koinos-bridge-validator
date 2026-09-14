@@ -10,8 +10,9 @@ import (
 
 // TransactionsStore contains a backend object and handles requests
 type TransactionsStore struct {
-	backend Backend
-	rwmutex sync.RWMutex
+	backend  Backend
+	activity *activityTracker
+	rwmutex  sync.RWMutex
 	sync.Mutex
 }
 
@@ -29,11 +30,19 @@ func (handler *TransactionsStore) Put(key string, transaction *bridge_pb.Transac
 		return fmt.Errorf("%w, %v", ErrSerialization, err)
 	}
 
+	var previous []byte
+	var previousErr error
+	if handler.activity != nil {
+		previous, previousErr = handler.backend.Get([]byte(key))
+	}
 	err = handler.backend.Put([]byte(key), itemBytes)
 	if err != nil {
 		return fmt.Errorf("%w, %v", ErrBackend, err)
 	}
 
+	if handler.activity != nil {
+		handler.activity.committed(previous, previousErr, itemBytes)
+	}
 	return nil
 }
 

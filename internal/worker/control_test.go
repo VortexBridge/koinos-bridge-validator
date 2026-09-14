@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
+	"github.com/koinos-bridge/koinos-bridge-validator/proto/build/github.com/koinos-bridge/koinos-bridge-validator/bridge_pb"
 )
 
 func privateTestDir(t *testing.T) string {
@@ -139,6 +142,14 @@ func TestPrivateControl(t *testing.T) {
 	defer cancel()
 	m := NewMonitor("synthetic-a", true, "", "")
 	m.Progress("evm", 9)
+	txStore := store.NewTransactionsStore(store.NewMapBackend())
+	txStore.EnableActivity("")
+	if err := txStore.Put("fixture", &bridge_pb.Transaction{Id: "fixture"}); err != nil {
+		t.Fatal(err)
+	}
+	m.SetActivitySource(func() map[string]store.TransactionActivity {
+		return map[string]store.TransactionActivity{"evm-to-koinos": txStore.Activity()}
+	})
 	c, err := StartControl(d, m, cancel)
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +161,9 @@ func TestPrivateControl(t *testing.T) {
 	}
 	if health.Mode != "observation-only" || health.EVMAddress != "" || health.Chains["evm"].Height != 9 {
 		t.Fatalf("wrong health: %+v", health)
+	}
+	if health.Activity["evm-to-koinos"].NewRecords != 1 || !health.Activity["evm-to-koinos"].Complete {
+		t.Fatal("private health omitted committed transaction activity")
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", filepath.Join(d, "control.sock"))

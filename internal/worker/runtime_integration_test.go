@@ -108,6 +108,15 @@ func TestStandaloneObservationRuntime(t *testing.T) {
 			var h Health
 			err := Call(context.Background(), filepath.Join(d, "bridge", ".operator"), "GET", "/health", &h)
 			if err == nil && h.PID == pid && h.Mode == "observation-only" && h.Chains["evm"].Status == "observed" && h.Chains["evm"].Height == 5 && h.Chains["koinos"].Status == "observed" {
+				if len(h.Activity) != 2 {
+					t.Fatal("compiled worker omitted direction activity")
+				}
+				for _, direction := range []string{"evm-to-koinos", "koinos-to-evm"} {
+					activity := h.Activity[direction]
+					if !activity.Enabled || !activity.Complete || activity.Writes != 0 || activity.NewRecords != 0 || activity.LocalSignatureChanges != 0 || activity.StartedAt.Before(h.StartedAt) {
+						t.Fatal("empty block polling was reported as transfer activity", activity)
+					}
+				}
 				return
 			}
 			time.Sleep(20 * time.Millisecond)

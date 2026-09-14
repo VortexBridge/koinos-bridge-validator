@@ -21,6 +21,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/store"
 )
 
 type ChainHealth struct {
@@ -29,18 +31,20 @@ type ChainHealth struct {
 	Status    string    `json:"status"`
 }
 type Health struct {
-	InstanceID     string                 `json:"instanceId"`
-	PID            int                    `json:"pid"`
-	StartedAt      time.Time              `json:"startedAt"`
-	Mode           string                 `json:"mode"`
-	EVMAddress     string                 `json:"evmAddress,omitempty"`
-	KoinosAddress  string                 `json:"koinosAddress,omitempty"`
-	Chains         map[string]ChainHealth `json:"chains"`
-	NetworkBinding *NetworkBinding        `json:"networkBinding,omitempty"`
+	InstanceID     string                               `json:"instanceId"`
+	PID            int                                  `json:"pid"`
+	StartedAt      time.Time                            `json:"startedAt"`
+	Mode           string                               `json:"mode"`
+	EVMAddress     string                               `json:"evmAddress,omitempty"`
+	KoinosAddress  string                               `json:"koinosAddress,omitempty"`
+	Chains         map[string]ChainHealth               `json:"chains"`
+	Activity       map[string]store.TransactionActivity `json:"activity,omitempty"`
+	NetworkBinding *NetworkBinding                      `json:"networkBinding,omitempty"`
 }
 type Monitor struct {
-	mu     sync.Mutex
-	health Health
+	mu             sync.Mutex
+	health         Health
+	activitySource func() map[string]store.TransactionActivity
 }
 
 func NewMonitor(id string, observe bool, evm, koinos string) *Monitor {
@@ -76,9 +80,16 @@ func (m *Monitor) IdentityProblem(chain string) {
 	h.Status = "network-unverified"
 	m.health.Chains[chain] = h
 }
-func (m *Monitor) Snapshot() Health {
+func (m *Monitor) SetActivitySource(source func() map[string]store.TransactionActivity) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.activitySource == nil {
+		m.activitySource = source
+	}
+}
+func (m *Monitor) Snapshot() Health {
+	m.mu.Lock()
+	source := m.activitySource
 	h := m.health
 	h.Chains = map[string]ChainHealth{}
 	for k, v := range m.health.Chains {
@@ -86,6 +97,10 @@ func (m *Monitor) Snapshot() Health {
 			v.Status = "stale"
 		}
 		h.Chains[k] = v
+	}
+	m.mu.Unlock()
+	if source != nil {
+		h.Activity = source()
 	}
 	return h
 }

@@ -291,6 +291,11 @@ func main() {
 	defer stop()
 	monitor := worker.NewMonitor(instanceID, observeOnly, ethAddress, koinosAddress)
 	monitor.SetNetworkBinding(networkBinding)
+	ethTxStore.EnableActivity(koinosAddress)
+	koinosTxStore.EnableActivity(ethAddress)
+	monitor.SetActivitySource(func() map[string]store.TransactionActivity {
+		return map[string]store.TransactionActivity{"evm-to-koinos": ethTxStore.Activity(), "koinos-to-evm": koinosTxStore.Activity()}
+	})
 	control, err := worker.StartControl(controlDir, monitor, stop)
 	if err != nil {
 		panic(err)

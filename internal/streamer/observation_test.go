@@ -37,6 +37,7 @@ func TestObservationStoresTransfersWithoutSigningOrBroadcast(t *testing.T) {
 	validators := map[string]util.ValidatorConfig{"peer": {ApiUrl: peer.URL}}
 	tokens := map[string]util.TokenConfig{evmAddr.Hex(): {KoinosAddress: koinosAddr}, koinosAddr: {EthereumAddress: evmAddr.Hex()}}
 	transactions := store.NewTransactionsStore(store.NewMapBackend())
+	transactions.EnableActivity("")
 	eventABI, err := abi.JSON(strings.NewReader(`[{"type":"event","name":"TokensLockedEvent","inputs":[{"name":"from","type":"address"},{"name":"token","type":"address"},{"name":"amount","type":"uint256"},{"name":"payment","type":"uint256"},{"name":"relayer","type":"string"},{"name":"recipient","type":"string"},{"name":"metadata","type":"string"},{"name":"blocktime","type":"uint256"},{"name":"chain","type":"uint32"}]}]`))
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +73,10 @@ func TestObservationStoresTransfersWithoutSigningOrBroadcast(t *testing.T) {
 	}
 	if len(tx.Signatures) != 0 || len(tx.Validators) != 0 {
 		t.Fatal("observation produced a signature")
+	}
+	activity := transactions.Activity()
+	if !activity.Complete || activity.NewRecords != 2 || activity.LocalSignatureChanges != 0 || activity.OtherSignatureChanges != 0 {
+		t.Fatalf("replay inflated recorded activity or observation counted signatures: %+v", activity)
 	}
 	// Missing keys also stop direct renewal calls before event parsing or networking.
 	processEthereumRequestNewSignaturesEvent(nil, "", nil, nil, nil, 0, nil, types.Log{}, abi.ABI{})
