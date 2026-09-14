@@ -154,6 +154,34 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, result)
+	case r.URL.Path == "/v1/worker/progress" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.ProgressWindowState())
+	case r.URL.Path == "/v1/worker/progress/start" && r.Method == "POST":
+		var req StartProgressWindow
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.BeginProgressWindow(r.Context(), req)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, result)
+	case r.URL.Path == "/v1/worker/progress/finish" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		result, err := s.Store.FinishProgressWindow(r.Context(), req.ID)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, result)
 	case r.URL.Path == "/v1/worker/setup" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.SetupState())
 	case r.URL.Path == "/v1/worker/setup/preview" && r.Method == "POST":

@@ -537,3 +537,51 @@ signature and status semantics, including their unresolved verification risks.
 They establish recorded activity beyond empty block polling; they do not prove
 current quorum, peer/API/frontend participation, safe signing or update readiness.
 Older workers omit activity; consumers must treat that as unknown rather than zero.
+
+## Durable progress observation windows
+
+In the Validator panel, **Observe progress over time** captures two observations
+from the selected worker's authenticated local control socket. Start a window of
+30–86,400 seconds with both pinned chains reporting fresh observations. Keep the
+same process running, then choose **Finish progress window** after the minimum
+duration and before the five-minute finishing allowance expires. Closing the
+browser or restarting the operator service preserves the baseline. Finishing is
+explicit; no background installer or scheduler runs from this panel.
+
+The operator hashes the registered executable and configuration before each
+capture. The comparison requires unchanged registration, artifact, configuration,
+process ID/start time, mode, public signing addresses, network/contract binding and
+activity tracking start times. Both chain observations must be no older than 30
+seconds when sampled. Regressing heights, counters, or timestamps, missing activity,
+and incomplete tracking invalidate the window. A stopped/replaced worker or an
+expired window records failure. A completed receipt is historical: retrying finish
+returns the same result and never refreshes its evidence.
+
+Results distinguish new records, local-address and other signature changes,
+completion transitions and successful writes for both directions. Empty polling or
+identical writes yield `no-recorded-progress`. `recorded-progress` means at least
+one derived store counter changed. Separate booleans identify recorded changes and
+local-address signature changes in both directions. These are telemetry, not
+independent signature verification, chain finality, current quorum or permission
+to activate a release. `activationReady` remains false. The two samples do not
+prove uninterrupted availability between them, and an operator-controlled host or
+executable can falsify telemetry. Full candidate qualification and authenticated
+stage participation checks remain separate prerequisites.
+
+Authenticated API routes (also available under the selected instance prefix):
+
+- `GET /v1/worker/progress`: current window and operator revision.
+- `POST /v1/worker/progress/start`: `{ "id": "operator-chosen-slug", "expectedRevision": 12, "minimumSeconds": 300 }`.
+- `POST /v1/worker/progress/finish`: `{ "id": "operator-chosen-slug" }`.
+
+Requests cannot supply snapshots, counters, file paths or readiness claims. Retry
+the same ID/settings after an uncertain start response. A different active window
+cannot replace the collecting baseline. Finish an expired window to record its
+failure before beginning another. Starting a new window archives the preceding
+completed receipt under the instance's private `progress-history/<id>.json`;
+`progress-window.json` stores the active/latest receipt. Archived IDs cannot be
+reused, existing receipts cannot be overwritten with different content, and a
+64-receipt bound stops further starts pending local retention review. The UI
+exports the current receipt; archived receipts are retained on disk. There is no
+automatic deletion or archive browser yet. These local JSON records are not signed
+remote attestations or protection against restoration of old operator state.
