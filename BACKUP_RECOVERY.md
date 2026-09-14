@@ -27,6 +27,9 @@ Review the helper source and build provenance, then record its SHA-256 using
 on Linux. The operator copies through one descriptor and verifies that digest
 before executing the helper. This is a locally trusted tool, not an untrusted
 release candidate; the browser cannot select executables or recovery key paths.
+The private operator directory (backup) and restored directory's parent (restore)
+must permit executing that reviewed helper copy. A `noexec` filesystem is rejected;
+the tool does not bypass mount restrictions or fall back to an unverified binary.
 
 The helper implements standard age X25519 recipient encryption through the
 [age Go API](https://pkg.go.dev/filippo.io/age). Its dependency is pinned to
@@ -169,3 +172,11 @@ ciphertext, wrong/private/symlink identity handling, concurrent publication, act
 and legacy writer rejection, malicious tar/database frames, checkpoint and pending
 record preservation, refused unreviewed startup, reviewed observer start/stop,
 refused signature exchange and configuration drift.
+
+For an isolated Linux test, the prebuilt test executable accepts
+`VORTEX_BACKUP_TEST_VALIDATOR`, `VORTEX_BACKUP_TEST_OPERATOR` and
+`VORTEX_BACKUP_CRYPTO_TEST_BINARY` as fixed fixture executable paths. This avoids
+installing Go inside the test container. Its disposable `/tmp` must explicitly
+permit execution of the reviewed helper copy. This requirement belongs to this
+backup test; the separate release-candidate smoke runner retains its existing
+`noexec` temporary mounts.

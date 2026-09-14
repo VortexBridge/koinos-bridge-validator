@@ -100,6 +100,10 @@ func runCrypto(ctx context.Context, binary string, input io.Reader, output io.Wr
 	cmd.Stderr = &limitedBuffer{limit: 1024}
 	cmd.Env = []string{"PATH=/usr/bin:/bin"}
 	if err := cmd.Run(); err != nil {
+		var launch *os.PathError
+		if errors.As(err, &launch) {
+			return errors.New("reviewed backup crypto helper could not start; the private staging filesystem must permit executable files")
+		}
 		return errors.New("backup encryption/decryption failed; check recovery identity, provider and archive integrity")
 	}
 	return nil
