@@ -154,7 +154,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, err.Error())
 			return
 		}
-		result, err := s.Store.CheckParticipation(req, time.Now().UTC())
+		result, err := s.Store.CheckParticipation(r.Context(), req, time.Now().UTC())
 		if err != nil {
 			fail(w, 409, err.Error())
 			return

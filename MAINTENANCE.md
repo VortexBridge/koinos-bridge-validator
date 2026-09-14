@@ -218,10 +218,31 @@ Verification reports all five stages for every route. For `evm-contract` and
 reports whether enough other participants proved both locally mapped keys. A
 proof counts only for the route whose two network and contract bindings match
 that worker snapshot; it cannot be reused for another bridge route.
-`peer`, `api` and `frontend` remain `unknown`: key possession does not prove
-those external services are reachable or behaving correctly. A passed key
-threshold also does not establish fresh on-chain membership, correct transfer
-signatures or chain finality. Therefore `activationReady` remains false.
+
+The requesting operator then rereads both contracts through its own private RPC
+bindings. Each binding must contain the exact complete profile in the maintenance
+policy; matching a profile ID alone is insufficient. The local service reports
+the observed network, block, finality, code hash, validator set and contract
+quorum without exporting the RPC URL. It intersects that validator set with the
+policy identities whose worker keys were just proved. A contract stage passes
+membership only when this intersection satisfies both the policy threshold and
+the freshly observed contract quorum.
+
+Missing bindings, unavailable RPCs, incomplete reads and unreviewed profiles stay
+`membership-unknown`. Network, contract-code or profile contradictions are
+`membership-blocked`. EVM membership can be counted when a finalized read matches
+the exact locally reviewed code hash. The current Koinos RPC reader observes a
+stable head and validator list but cannot pin `read_contract` to irreversible
+state or attest deployed code, so it remains unknown and is displayed only as an
+untrusted observation. Do not convert it to passed from a health response or a
+manually supplied validator list.
+
+Contract reads are bounded to 20 seconds with at most eight in flight. The
+service revalidates the short-lived signed responses after those reads, so slow
+RPC work cannot extend their 30-second lifetime. `peer`, `api` and `frontend`
+remain `unknown`: contract membership and key possession do not prove those
+external services are reachable or behaving correctly, or that bridge signatures
+are being produced. Therefore `activationReady` remains false.
 
 In Updates, create and export a participation request for the reviewed plan.
 Other operators import its JSON, choose **Capture and sign local observation**,
@@ -274,15 +295,16 @@ worker to sign caller-selected transfer or governance bytes.
 Scheduling signatures establish which configured operator reported a snapshot;
 valid worker proofs additionally show that the responding process could use the
 two mapped private keys for this one domain-separated challenge. An
-operator-controlled host or executable can still lie, and the proof does not show
-current on-chain membership, productive bridge signing, contract finality,
-independent failure domains or satisfaction of peer/API/frontend thresholds.
-`allResponded` only describes response collection and
-`contractKeyThresholdsMet` only describes local key-possession counts;
-`activationReady` remains false. Current publisher trust, exact tested artifacts,
-previous-wave progress, external stage checks, installation and recovery remain
-required. Restored journals, compromised scheduling or bridge keys, and clock
-faults remain outside this local protocol's guarantees.
+operator-controlled host or executable can still lie. `allResponded` describes
+response collection, `contractKeyThresholdsMet` describes local key-possession
+counts, and `contractMembershipThresholdsMet` additionally requires every route's
+two contract stages to pass with fresh finalized, code-matched membership. None
+of these fields proves productive bridge signing, independent failure domains or
+satisfaction of peer/API/frontend thresholds. `activationReady` remains false.
+Current publisher trust, exact tested artifacts, previous-wave progress, external
+stage checks, installation and recovery remain required. Restored journals,
+compromised scheduling or bridge keys, and clock faults remain outside this local
+protocol's guarantees.
 
 For a fresh participation-only fixture with all three schedule endorsements:
 

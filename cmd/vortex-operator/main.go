@@ -169,7 +169,7 @@ func run() error {
 		if err := operator.ReadParticipationInput(*participationFile, &reports); err != nil {
 			return err
 		}
-		result, err := s.CheckParticipation(reports, time.Now().UTC())
+		result, err := s.CheckParticipation(context.Background(), reports, time.Now().UTC())
 		if err != nil {
 			return err
 		}

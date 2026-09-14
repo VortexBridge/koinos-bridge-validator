@@ -292,7 +292,7 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		receipt.Checks = append(receipt.Checks, updateCheck("encrypted-backup", "passed", "The selected post-approval backup receipt matches intact ciphertext; restore and reconciliation remain separate evidence."))
 	}
 
-	participation, participationErr := s.CheckParticipation(req.ParticipationResponses, now)
+	participation, participationErr := s.CheckParticipation(ctx, req.ParticipationResponses, now)
 	if participationErr != nil {
 		receipt.Checks = append(receipt.Checks, updateCheck("maintenance-reservation", "blocked", participationErr.Error()))
 		receipt.Checks = append(receipt.Checks, updateCheck("authenticated-participation", "blocked", "Fresh authenticated responses from the reserved maintenance plan are required."))
@@ -310,8 +310,10 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		}
 		if participation.ActivationReady {
 			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "passed", "Fresh verified signing participation satisfies every applicable route stage."))
+		} else if participation.ContractMembershipThresholdsMet {
+			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Non-updating operators proved enough locally mapped bridge keys and finalized contract membership for both contract stages, but productive signing and peer/API/frontend thresholds remain unverified."))
 		} else if participation.ContractKeyThresholdsMet {
-			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Non-updating operators proved enough locally mapped bridge keys for both contract stages, but current on-chain membership and peer/API/frontend thresholds remain unverified."))
+			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Non-updating operators proved enough locally mapped bridge keys, but current contract membership, finality or deployed-code provenance remains unknown, mismatched or below a required threshold on at least one route."))
 		} else {
 			receipt.Checks = append(receipt.Checks, updateCheck("signing-quorum", "blocked", "Authenticated responses do not prove enough locally mapped bridge keys for both contract stages; all external route stages also remain unverified."))
 		}

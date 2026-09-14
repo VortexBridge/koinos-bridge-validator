@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
@@ -62,25 +64,49 @@ type ParticipationMemberResult struct {
 	Notice     string `json:"notice"`
 }
 type ParticipationStageResult struct {
-	RouteID    string   `json:"routeId"`
-	Stage      string   `json:"stage"`
-	Required   int      `json:"required"`
-	Eligible   []string `json:"eligible"`
-	Unverified []string `json:"unverified"`
-	State      string   `json:"state"`
-	Notice     string   `json:"notice"`
+	RouteID            string   `json:"routeId"`
+	Stage              string   `json:"stage"`
+	Required           int      `json:"required"`
+	ObservedRequired   int      `json:"observedRequired,omitempty"`
+	Eligible           []string `json:"eligible"`
+	MembershipEligible []string `json:"membershipEligible"`
+	Unverified         []string `json:"unverified"`
+	State              string   `json:"state"`
+	Notice             string   `json:"notice"`
+}
+type ParticipationContractObservation struct {
+	RouteID             string    `json:"routeId"`
+	Stage               string    `json:"stage"`
+	Family              string    `json:"family"`
+	ProfileID           string    `json:"profileId"`
+	ProfileDigest       string    `json:"profileDigest"`
+	ObservedAt          time.Time `json:"observedAt,omitempty"`
+	State               string    `json:"state"`
+	NetworkID           string    `json:"networkId,omitempty"`
+	Block               string    `json:"block,omitempty"`
+	BlockHash           string    `json:"blockHash,omitempty"`
+	Finality            string    `json:"finality"`
+	CodeHash            string    `json:"codeHash,omitempty"`
+	Validators          []string  `json:"validators"`
+	Quorum              int       `json:"quorum"`
+	ObservedMemberIDs   []string  `json:"observedMemberIds"`
+	ObservedEligibleIDs []string  `json:"observedEligibleIds"`
+	MembershipEligible  []string  `json:"membershipEligible"`
+	Notice              string    `json:"notice"`
 }
 type ParticipationVerification struct {
-	ProbeDigest              string                      `json:"probeDigest"`
-	CheckedAt                time.Time                   `json:"checkedAt"`
-	ExpiresAt                time.Time                   `json:"expiresAt"`
-	Members                  []ParticipationMemberResult `json:"members"`
-	Missing                  []string                    `json:"missing"`
-	Stages                   []ParticipationStageResult  `json:"stages"`
-	AllResponded             bool                        `json:"allResponded"`
-	ContractKeyThresholdsMet bool                        `json:"contractKeyThresholdsMet"`
-	ActivationReady          bool                        `json:"activationReady"`
-	Notice                   string                      `json:"notice"`
+	ProbeDigest                     string                             `json:"probeDigest"`
+	CheckedAt                       time.Time                          `json:"checkedAt"`
+	ExpiresAt                       time.Time                          `json:"expiresAt"`
+	Members                         []ParticipationMemberResult        `json:"members"`
+	Missing                         []string                           `json:"missing"`
+	Stages                          []ParticipationStageResult         `json:"stages"`
+	ContractObservations            []ParticipationContractObservation `json:"contractObservations"`
+	AllResponded                    bool                               `json:"allResponded"`
+	ContractKeyThresholdsMet        bool                               `json:"contractKeyThresholdsMet"`
+	ContractMembershipThresholdsMet bool                               `json:"contractMembershipThresholdsMet"`
+	ActivationReady                 bool                               `json:"activationReady"`
+	Notice                          string                             `json:"notice"`
 }
 
 func participationBytes(domain string, value interface{}) []byte {
@@ -301,7 +327,7 @@ func participationStages(policy MaintenancePolicy, requester string, states map[
 	for _, route := range policy.Routes {
 		routeStates := states[route.ID]
 		for _, stage := range route.Stages {
-			result := ParticipationStageResult{RouteID: route.ID, Stage: stage.Name, Required: stage.Required, Eligible: []string{}, Unverified: []string{}, State: "unknown"}
+			result := ParticipationStageResult{RouteID: route.ID, Stage: stage.Name, Required: stage.Required, Eligible: []string{}, MembershipEligible: []string{}, Unverified: []string{}, State: "unknown"}
 			if stage.Name == "evm-contract" || stage.Name == "koinos-contract" {
 				for _, id := range stage.Participants {
 					if id != requester && routeStates[id] == "signing-key-proved" {
@@ -335,7 +361,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	if len(reports) > len(policy.Members) {
 		return ParticipationVerification{}, errors.New("too many participation responses")
 	}
-	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Stages: []ParticipationStageResult{}, Notice: "Authenticated operator and worker key-possession evidence only. Fresh contract membership, valid bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
+	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Stages: []ParticipationStageResult{}, ContractObservations: []ParticipationContractObservation{}, Notice: "Authenticated operator and worker key-possession evidence only. Fresh contract membership, valid bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
 	seen := map[string]bool{}
 	memberStates := map[string]map[string]string{}
 	memberPolicy := map[string]MaintenanceMember{}
@@ -430,7 +456,239 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	result.Stages, result.ContractKeyThresholdsMet = participationStages(policy, req.Probe.Challenge.Requester, memberStates)
 	return result, nil
 }
-func (s *Store) CheckParticipation(reports []SignedParticipationObservation, now time.Time) (ParticipationVerification, error) {
+
+type participationContractTarget struct {
+	routeID      string
+	stage        string
+	profile      Profile
+	participants []string
+	eligible     []string
+}
+
+func contractTargetKey(routeID, stage string) string { return routeID + "\x00" + stage }
+
+func chainContainsAddress(family string, validators []string, address string) bool {
+	for _, validator := range validators {
+		if (family == "evm" && strings.EqualFold(validator, address)) || (family == "koinos" && validator == address) {
+			return true
+		}
+	}
+	return false
+}
+
+func newParticipationContractObservation(target participationContractTarget) ParticipationContractObservation {
+	return ParticipationContractObservation{
+		RouteID: target.routeID, Stage: target.stage, Family: target.profile.Family,
+		ProfileID: target.profile.ID, ProfileDigest: target.profile.Digest(), State: "unknown",
+		Finality: "unknown", Validators: []string{}, ObservedMemberIDs: []string{}, ObservedEligibleIDs: []string{}, MembershipEligible: []string{},
+	}
+}
+
+func evaluateParticipationContractObservation(target participationContractTarget, members map[string]MaintenanceMember, binding Binding, found bool, observed *Observation) ParticipationContractObservation {
+	result := newParticipationContractObservation(target)
+	if !found {
+		result.Notice = "No local RPC binding exists for this exact deployment profile. Contract membership is unknown."
+		return result
+	}
+	if binding.Profile.Digest() != target.profile.Digest() {
+		result.State = "blocked"
+		result.Notice = "The locally saved deployment profile differs from the maintenance policy. Review the profile before using membership evidence."
+		return result
+	}
+	if observed == nil {
+		result.Notice = "The bounded contract membership check did not complete."
+		return result
+	}
+	result.ObservedAt = observed.ObservedAt
+	result.NetworkID = observed.NetworkID
+	result.Block = observed.Block
+	result.BlockHash = observed.BlockHash
+	result.Finality = observed.Finality
+	result.CodeHash = observed.CodeHash
+	result.Validators = append(result.Validators, observed.Validators...)
+	result.Quorum = observed.Quorum
+	if observed.Complete && observed.Status == "observed" {
+		for _, id := range target.participants {
+			member := members[id]
+			address := member.EVMAddress
+			if target.profile.Family == "koinos" {
+				address = member.KoinosAddress
+			}
+			if address != "" && chainContainsAddress(target.profile.Family, observed.Validators, address) {
+				result.ObservedMemberIDs = append(result.ObservedMemberIDs, id)
+			}
+		}
+		for _, id := range target.eligible {
+			member := members[id]
+			address := member.EVMAddress
+			if target.profile.Family == "koinos" {
+				address = member.KoinosAddress
+			}
+			if address != "" && chainContainsAddress(target.profile.Family, observed.Validators, address) {
+				result.ObservedEligibleIDs = append(result.ObservedEligibleIDs, id)
+			}
+		}
+	}
+	if observed.Status == "mismatch" {
+		result.State = "blocked"
+		result.Notice = observed.Message
+		return result
+	}
+	if !observed.Complete || observed.Status != "observed" {
+		result.Notice = observed.Message
+		if result.Notice == "" {
+			result.Notice = "Contract membership could not be read completely."
+		}
+		return result
+	}
+	if observed.NetworkID != target.profile.NetworkID || observed.BridgeChainID != target.profile.BridgeChainID {
+		result.State = "blocked"
+		result.Notice = "The observed network or bridge chain identity differs from the maintenance policy."
+		return result
+	}
+	if len(observed.Validators) == 0 || observed.Quorum != Quorum(len(observed.Validators)) {
+		result.State = "blocked"
+		result.Notice = "The observed validator set or quorum is empty or internally inconsistent."
+		return result
+	}
+	if !target.profile.Reviewed {
+		result.Notice = "Membership was read, but the deployment profile has not been locally reviewed."
+		return result
+	}
+	if observed.CodeHash == "" {
+		result.Notice = "Membership was read, but deployed contract code was not attested by this RPC path."
+		return result
+	}
+	if observed.CodeHash != target.profile.CodeHash {
+		result.State = "blocked"
+		result.Notice = "Observed contract code differs from the locally reviewed deployment profile."
+		return result
+	}
+	if observed.Finality != "finalized" {
+		result.Notice = "Membership was read, but the observation is not pinned to finalized state."
+		return result
+	}
+	result.State = "verified"
+	result.MembershipEligible = append(result.MembershipEligible, result.ObservedEligibleIDs...)
+	result.Notice = "Fresh finalized membership matches the exact locally reviewed deployment profile. Productive bridge signing remains a separate check."
+	return result
+}
+
+func (s *Store) collectParticipationContractObservations(ctx context.Context, policy MaintenancePolicy, verified ParticipationVerification) []ParticipationContractObservation {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stages := map[string]ParticipationStageResult{}
+	for _, stage := range verified.Stages {
+		stages[contractTargetKey(stage.RouteID, stage.Stage)] = stage
+	}
+	targets := []participationContractTarget{}
+	for _, route := range policy.Routes {
+		for _, stage := range route.Stages {
+			if stage.Name != "evm-contract" && stage.Name != "koinos-contract" {
+				continue
+			}
+			profile := route.EVM
+			if stage.Name == "koinos-contract" {
+				profile = route.Koinos
+			}
+			keyStage := stages[contractTargetKey(route.ID, stage.Name)]
+			targets = append(targets, participationContractTarget{route.ID, stage.Name, profile, append([]string{}, stage.Participants...), append([]string{}, keyStage.Eligible...)})
+		}
+	}
+	members := map[string]MaintenanceMember{}
+	for _, member := range policy.Members {
+		members[member.InstanceID] = member
+	}
+	results := make([]ParticipationContractObservation, len(targets))
+	bounded, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	semaphore := make(chan struct{}, 8)
+	var wait sync.WaitGroup
+	for i := range targets {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			target := targets[index]
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-bounded.Done():
+				results[index] = newParticipationContractObservation(target)
+				results[index].Notice = "The contract membership check could not start before the bounded participation deadline."
+				return
+			}
+			binding, found := s.Binding(target.profile.ID)
+			if !found || binding.Profile.Digest() != target.profile.Digest() {
+				results[index] = evaluateParticipationContractObservation(target, members, binding, found, nil)
+				return
+			}
+			observation := Observe(bounded, binding)
+			results[index] = evaluateParticipationContractObservation(target, members, binding, true, &observation)
+			current, stillFound := s.Binding(target.profile.ID)
+			if !stillFound || current.Profile.Digest() != binding.Profile.Digest() || current.RPC != binding.RPC {
+				results[index].State = "blocked"
+				results[index].MembershipEligible = []string{}
+				results[index].Notice = "The local RPC binding changed during the contract membership check. Retry against the reviewed configuration."
+			}
+		}(i)
+	}
+	wait.Wait()
+	return results
+}
+
+func applyParticipationContractObservations(verified *ParticipationVerification, observations []ParticipationContractObservation) {
+	verified.ContractObservations = append([]ParticipationContractObservation{}, observations...)
+	byStage := map[string]ParticipationContractObservation{}
+	for _, observation := range observations {
+		byStage[contractTargetKey(observation.RouteID, observation.Stage)] = observation
+	}
+	contractStages := 0
+	allMembership := true
+	for i := range verified.Stages {
+		stage := &verified.Stages[i]
+		if stage.Stage != "evm-contract" && stage.Stage != "koinos-contract" {
+			continue
+		}
+		contractStages++
+		observation, found := byStage[contractTargetKey(stage.RouteID, stage.Stage)]
+		if !found {
+			stage.State = "membership-unknown"
+			stage.Notice = "No fresh local contract membership observation is available."
+			allMembership = false
+			continue
+		}
+		stage.ObservedRequired = observation.Quorum
+		stage.MembershipEligible = append([]string{}, observation.MembershipEligible...)
+		if observation.State != "verified" {
+			stage.State = "membership-" + observation.State
+			stage.Notice = observation.Notice
+			allMembership = false
+			continue
+		}
+		required := stage.Required
+		if observation.Quorum > required {
+			required = observation.Quorum
+		}
+		if len(stage.MembershipEligible) < required {
+			stage.State = "membership-blocked"
+			stage.Notice = fmt.Sprintf("Only %d non-updating key-proved operators are current contract members; policy requires %d and the observed contract quorum is %d.", len(stage.MembershipEligible), stage.Required, observation.Quorum)
+			allMembership = false
+			continue
+		}
+		stage.State = "membership-threshold-passed"
+		stage.Notice = fmt.Sprintf("%d non-updating key-proved operators are current finalized contract members; policy requires %d and the observed contract quorum is %d. Productive signing remains unverified.", len(stage.MembershipEligible), stage.Required, observation.Quorum)
+	}
+	verified.ContractMembershipThresholdsMet = contractStages > 0 && allMembership
+	if verified.ContractMembershipThresholdsMet {
+		verified.Notice = "Fresh key-possession and finalized contract-membership evidence satisfies both contract stages for every route. Valid bridge signatures and each peer/API/frontend threshold remain required; this inspection cannot authorize installation."
+	} else {
+		verified.Notice = "Fresh contract membership is missing, mismatched, unfinalized or below a required threshold on at least one route. Valid bridge signatures and each peer/API/frontend threshold also remain required; this inspection cannot authorize installation."
+	}
+}
+
+func (s *Store) CheckParticipation(ctx context.Context, reports []SignedParticipationObservation, now time.Time) (ParticipationVerification, error) {
+	started := time.Now()
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
 	req, err := s.readLocalParticipation()
@@ -447,7 +705,18 @@ func (s *Store) CheckParticipation(reports []SignedParticipationObservation, now
 	if !currentParticipationApproval(req.Envelope, s.ReleaseApprovals(), s.InstanceID()) {
 		return ParticipationVerification{}, errors.New("local release approval was revoked or superseded")
 	}
-	return VerifyParticipation(req, reports, policy, now)
+	verified, err := VerifyParticipation(req, reports, policy, now)
+	if err != nil {
+		return ParticipationVerification{}, err
+	}
+	observations := s.collectParticipationContractObservations(ctx, policy, verified)
+	checkedAt := now.Add(time.Since(started))
+	verified, err = VerifyParticipation(req, reports, policy, checkedAt)
+	if err != nil {
+		return ParticipationVerification{}, err
+	}
+	applyParticipationContractObservations(&verified, observations)
+	return verified, nil
 }
 
 func currentParticipationApproval(envelope MaintenanceEnvelope, approvals []ReleaseApproval, id string) bool {

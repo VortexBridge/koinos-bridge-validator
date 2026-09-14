@@ -8,6 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +50,7 @@ func participationFixture(t *testing.T) (maintenanceFixture, ParticipationReques
 }
 func TestParticipationAuthenticatedUnavailableIsNotQuorum(t *testing.T) {
 	f, req, reports := participationFixture(t)
-	report, err := f.stores[0].CheckParticipation(reports, time.Now().UTC())
+	report, err := f.stores[0].CheckParticipation(context.Background(), reports, time.Now().UTC())
 	if err != nil || !report.AllResponded || report.ActivationReady || len(report.Members) != 3 {
 		t.Fatal(report, err)
 	}
@@ -72,7 +75,7 @@ func TestParticipationAuthenticatedUnavailableIsNotQuorum(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(req, retry) {
 		t.Fatal("challenge changed on retry", err)
 	}
-	if _, err := reopened.CheckParticipation(reports, time.Now().UTC()); err != nil {
+	if _, err := reopened.CheckParticipation(context.Background(), reports, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	revision, _, _ := reopened.Summary()
@@ -82,7 +85,7 @@ func TestParticipationAuthenticatedUnavailableIsNotQuorum(t *testing.T) {
 	if err := reopened.RevokeRelease(req.Probe.Challenge.ReleaseDigest, revision, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reopened.CheckParticipation(reports, time.Now().UTC()); err == nil {
+	if _, err := reopened.CheckParticipation(context.Background(), reports, time.Now().UTC()); err == nil {
 		t.Fatal("accepted revoked approval")
 	}
 }
@@ -292,7 +295,7 @@ func TestParticipationStoredChallengeAndSupersededApproval(t *testing.T) {
 	if _, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"replacement", revision, req.Envelope}, req.Probe.Challenge.ExpiresAt.Add(time.Minute)); err == nil {
 		t.Fatal("replaced corrupted challenge")
 	}
-	if _, err := f.stores[0].CheckParticipation(reports, time.Now().UTC()); err == nil {
+	if _, err := f.stores[0].CheckParticipation(context.Background(), reports, time.Now().UTC()); err == nil {
 		t.Fatal("accepted modified stored challenge")
 	}
 }
@@ -375,6 +378,241 @@ func signedKeyParticipationResponse(t *testing.T, s *Store, request Participatio
 		t.Fatal(err)
 	}
 	return SignedParticipationObservation{Observation: observation, Signature: hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", observation)))}
+}
+
+func fakeEVMMembership(t *testing.T, profile Profile, validators []string) *httptest.Server {
+	t.Helper()
+	selectors := map[string]string{}
+	for _, method := range []string{"chainId()", "nonce()", "paused()", "getValidatorsLength()", "validators(uint256)"} {
+		selectors[hex.EncodeToString(crypto.Keccak256([]byte(method))[:4])] = method
+	}
+	network, ok := new(big.Int).SetString(profile.NetworkID, 10)
+	if !ok {
+		t.Fatal("invalid synthetic EVM network")
+	}
+	word := func(value *big.Int) string { return "0x" + fmt.Sprintf("%064x", value) }
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var result interface{}
+		switch request.Method {
+		case "eth_chainId":
+			result = "0x" + network.Text(16)
+		case "eth_getBlockByNumber":
+			result = map[string]string{"number": "0x10", "hash": "0x" + strings.Repeat("a", 64)}
+		case "eth_getCode":
+			result = "0x6000"
+		case "eth_call":
+			var call map[string]string
+			if err := json.Unmarshal(request.Params[0], &call); err != nil {
+				t.Error(err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			data := strings.TrimPrefix(call["data"], "0x")
+			if len(data) < 8 {
+				t.Error("short EVM call")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			switch selectors[data[:8]] {
+			case "chainId()":
+				result = word(new(big.Int).SetUint64(uint64(profile.BridgeChainID)))
+			case "nonce()", "paused()":
+				result = word(big.NewInt(0))
+			case "getValidatorsLength()":
+				result = word(new(big.Int).SetInt64(int64(len(validators))))
+			case "validators(uint256)":
+				if len(data) != 72 {
+					t.Error("invalid validator index call")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				index, ok := new(big.Int).SetString(data[8:], 16)
+				if !ok || !index.IsInt64() || index.Int64() < 0 || index.Int64() >= int64(len(validators)) {
+					t.Error("invalid validator index")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				address, ok := new(big.Int).SetString(strings.TrimPrefix(validators[index.Int64()], "0x"), 16)
+				if !ok {
+					t.Error("invalid validator address")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				result = word(address)
+			default:
+				t.Error("unexpected EVM call selector")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		default:
+			t.Errorf("unexpected RPC method %s", request.Method)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": 1, "result": result})
+	}))
+}
+
+func TestParticipationJoinsKeyProofsWithFreshEVMContractMembership(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		memberCount int
+		wantState   string
+		wantMembers int
+	}{
+		{"enough-current-members", 3, "membership-threshold-passed", 2},
+		{"missing-current-member", 2, "membership-blocked", 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newMaintenanceFixture(t)
+			identities := make([]syntheticBridgeIdentity, len(f.stores))
+			for i := range f.stores {
+				identities[i] = newSyntheticBridgeIdentity(t)
+				f.policy.Members[i].EVMAddress = identities[i].evmAddress
+				f.policy.Members[i].KoinosAddress = identities[i].koinosAddress
+			}
+			profile := f.policy.Routes[0].EVM
+			profile.CodeHash = hex.EncodeToString(crypto.Keccak256([]byte{0x60, 0x00}))
+			profile.Reviewed = true
+			profile.ReviewEvidence = "synthetic finalized membership fixture"
+			f.policy.Routes[0].EVM = profile
+			f.plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+			f.savePolicy(t)
+			onChain := []string{}
+			for i := 0; i < test.memberCount; i++ {
+				onChain = append(onChain, identities[i].evmAddress)
+			}
+			rpc := fakeEVMMembership(t, profile, onChain)
+			defer rpc.Close()
+			revision, _, _ := f.stores[0].Summary()
+			if _, err := f.stores[0].Apply(ApplyConfig{revision, "evm-membership-binding", Binding{profile, rpc.URL}}); err != nil {
+				t.Fatal(err)
+			}
+			envelope := MaintenanceEnvelope{Plan: f.plan}
+			for i := range f.stores {
+				envelope.Endorsements = append(envelope.Endorsements, f.endorse(t, i, f.plan))
+			}
+			revision, _, _ = f.stores[0].Summary()
+			request, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"membership-proof", revision, envelope}, f.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reports := make([]SignedParticipationObservation, len(f.stores))
+			for i, store := range f.stores {
+				reports[i] = signedKeyParticipationResponse(t, store, request, f.policy.Routes[0], identities[i])
+			}
+			verified, err := f.stores[0].CheckParticipation(context.Background(), reports, request.Probe.Challenge.IssuedAt.Add(2*time.Second))
+			if err != nil || !verified.ContractKeyThresholdsMet || verified.ContractMembershipThresholdsMet || verified.ActivationReady {
+				t.Fatal("unexpected joined participation result", verified, err)
+			}
+			if len(verified.ContractObservations) != 2 {
+				t.Fatal("missing per-contract observations", verified.ContractObservations)
+			}
+			seenEVM, seenKoinos := false, false
+			for _, observation := range verified.ContractObservations {
+				switch observation.Family {
+				case "evm":
+					seenEVM = true
+					if observation.State != "verified" || observation.Quorum != 2 || len(observation.MembershipEligible) != test.wantMembers {
+						t.Fatal("unexpected EVM membership observation", observation)
+					}
+				case "koinos":
+					seenKoinos = true
+					if observation.State != "unknown" || len(observation.MembershipEligible) != 0 {
+						t.Fatal("missing Koinos binding did not remain unknown", observation)
+					}
+				}
+			}
+			if !seenEVM || !seenKoinos {
+				t.Fatal("missing chain observation", verified.ContractObservations)
+			}
+			for _, stage := range verified.Stages {
+				if stage.Stage == "evm-contract" && (stage.State != test.wantState || stage.ObservedRequired != 2 || len(stage.MembershipEligible) != test.wantMembers) {
+					t.Fatal("unexpected EVM stage result", stage)
+				}
+				if stage.Stage == "koinos-contract" && stage.State != "membership-unknown" {
+					t.Fatal("Koinos stage did not remain unknown", stage)
+				}
+			}
+		})
+	}
+}
+
+func TestParticipationRequiresFinalityAndCodeBeforeCountingMembership(t *testing.T) {
+	identity := newSyntheticBridgeIdentity(t)
+	profile := vectors(t)[0].Profile
+	profile.CodeHash = strings.Repeat("a", 64)
+	profile.Reviewed = true
+	profile.ReviewEvidence = "synthetic profile"
+	target := participationContractTarget{"route-a", "evm-contract", profile, []string{"operator-a"}, []string{"operator-a"}}
+	members := map[string]MaintenanceMember{"operator-a": {InstanceID: "operator-a", EVMAddress: identity.evmAddress, KoinosAddress: identity.koinosAddress}}
+	binding := Binding{Profile: profile, RPC: "http://127.0.0.1:8545"}
+	base := Observation{Complete: true, ProfileID: profile.ID, ObservedAt: time.Now().UTC(), Status: "observed", NetworkID: profile.NetworkID, Block: "0x1", BlockHash: "0x" + strings.Repeat("b", 64), Finality: "finalized", CodeHash: profile.CodeHash, BridgeChainID: profile.BridgeChainID, Validators: []string{identity.evmAddress}, Quorum: 1}
+	verified := evaluateParticipationContractObservation(target, members, binding, true, &base)
+	if verified.State != "verified" || len(verified.MembershipEligible) != 1 {
+		t.Fatal("complete finalized membership was not verified", verified)
+	}
+	for _, test := range []struct {
+		name   string
+		change func(*Observation)
+		state  string
+	}{
+		{"missing-code", func(o *Observation) { o.CodeHash = "" }, "unknown"},
+		{"unfinalized", func(o *Observation) { o.Finality = "head snapshot; not pinned to irreversible state" }, "unknown"},
+		{"wrong-code", func(o *Observation) { o.CodeHash = strings.Repeat("c", 64) }, "blocked"},
+		{"wrong-network", func(o *Observation) { o.NetworkID = "1" }, "blocked"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			observation := base
+			test.change(&observation)
+			result := evaluateParticipationContractObservation(target, members, binding, true, &observation)
+			if result.State != test.state || len(result.MembershipEligible) != 0 {
+				t.Fatal("unsafe membership evidence was counted", result)
+			}
+		})
+	}
+	changedBinding := binding
+	changedBinding.Profile.Name = "changed deployment"
+	result := evaluateParticipationContractObservation(target, members, changedBinding, true, nil)
+	if result.State != "blocked" {
+		t.Fatal("changed local profile was not blocked", result)
+	}
+}
+
+func TestParticipationRequiresEveryObservedContractQuorum(t *testing.T) {
+	verification := ParticipationVerification{Stages: []ParticipationStageResult{
+		{RouteID: "route-a", Stage: "evm-contract", Required: 2, Eligible: []string{"operator-b", "operator-c"}, MembershipEligible: []string{}, Unverified: []string{}},
+		{RouteID: "route-a", Stage: "koinos-contract", Required: 2, Eligible: []string{"operator-b", "operator-c"}, MembershipEligible: []string{}, Unverified: []string{}},
+		{RouteID: "route-a", Stage: "peer", Required: 2, Eligible: []string{}, MembershipEligible: []string{}, Unverified: []string{"operator-a", "operator-b", "operator-c"}, State: "unknown"},
+	}}
+	observations := []ParticipationContractObservation{
+		{RouteID: "route-a", Stage: "evm-contract", Family: "evm", State: "verified", Quorum: 2, MembershipEligible: []string{"operator-b", "operator-c"}},
+		{RouteID: "route-a", Stage: "koinos-contract", Family: "koinos", State: "verified", Quorum: 2, MembershipEligible: []string{"operator-b", "operator-c"}},
+	}
+	applyParticipationContractObservations(&verification, observations)
+	if !verification.ContractMembershipThresholdsMet || verification.ActivationReady {
+		t.Fatal("verified contract membership did not pass separately from activation", verification)
+	}
+	if verification.Stages[0].State != "membership-threshold-passed" || verification.Stages[1].State != "membership-threshold-passed" || verification.Stages[2].State != "unknown" {
+		t.Fatal("contract evidence changed an external stage", verification.Stages)
+	}
+
+	verification.Stages[0].State = "key-threshold-passed"
+	verification.Stages[1].State = "key-threshold-passed"
+	observations[1].Quorum = 3
+	applyParticipationContractObservations(&verification, observations)
+	if verification.ContractMembershipThresholdsMet || verification.Stages[1].State != "membership-blocked" {
+		t.Fatal("a stricter observed contract quorum was ignored", verification)
+	}
 }
 
 func attachSyntheticSigningWorker(t *testing.T, s *Store, route MaintenanceRoute, identity syntheticBridgeIdentity, workerID string) func() {
