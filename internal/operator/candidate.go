@@ -119,7 +119,7 @@ func verifyContainerIsolation(raw []byte) error {
 func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath, checkerHash string) (CandidateResult, error) {
 	s.updateMu.Lock()
 	defer s.updateMu.Unlock()
-	result := CandidateResult{ReleaseDigest: digest, Platform: platform, CheckerSHA256: checkerHash, StartedAt: time.Now().UTC(), Isolation: "local-docker-network-none-readonly-no-host-mounts-uid65532", Notice: "Observation smoke evidence only. Contract regressions, transfer tests, mixed-version compatibility, independent operator approval and rollout preflight are still required."}
+	result := CandidateResult{ReleaseDigest: digest, Platform: platform, CheckerSHA256: checkerHash, StartedAt: time.Now().UTC(), Isolation: "local-docker-network-none-readonly-no-host-mounts-uid65532", Notice: "Isolated observation-transfer evidence only. Signing, contract execution, mixed-version compatibility, migration, independent-host approval and rollout preflight are still required."}
 	record, err := s.loadStaged(digest, platform, time.Now().UTC())
 	if err != nil {
 		return result, err
@@ -240,7 +240,7 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 	output, runErr := dockerOutput(ctx, host, nil, "start", "--attach", name)
 	result.FinishedAt = time.Now().UTC()
 	if strictJSON(output, &result.Report) != nil {
-		result.Report = CandidateReport{SchemaVersion: 1, State: "failed", Scope: "isolated-observation-smoke-v1", ArtifactSHA256: record.Artifact.SHA256, Checks: []string{}, Error: "Candidate checker did not return a valid bounded report"}
+		result.Report = CandidateReport{SchemaVersion: 2, State: "failed", Scope: "isolated-observation-transfer-v2", ArtifactSHA256: record.Artifact.SHA256, Checks: []string{}, Error: "Candidate checker did not return a valid bounded report"}
 	}
 	if runErr != nil || validateCandidateReport(result.Report, record.Artifact.SHA256) != nil {
 		result.Report.State = "failed"
@@ -261,20 +261,38 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 	if err := atomicFile(reportDir, "candidate-result.json", encoded); err != nil {
 		return result, errors.New("cannot persist candidate report")
 	}
-	if result.Report.State != "smoke-passed" {
-		return result, fmt.Errorf("candidate smoke checks failed: %s", result.Report.Error)
+	if result.Report.State != "checks-passed" {
+		return result, fmt.Errorf("candidate observation-transfer checks failed: %s", result.Report.Error)
 	}
 	return result, nil
 }
 
 func validateCandidateReport(report CandidateReport, artifact string) error {
-	expected := []string{"keyless-start-and-both-chain-observation", "signature-exchange-refused", "duplicate-process-excluded", "crash-restart-checkpoint-retained", "graceful-stop", "only-read-rpc-methods"}
-	if report.SchemaVersion != 1 || report.Scope != "isolated-observation-smoke-v1" || report.ArtifactSHA256 != artifact || report.State != "smoke-passed" || report.Error != "" || len(report.Checks) != len(expected) {
-		return errors.New("invalid candidate smoke report")
+	expected := []string{"pinned-networks-and-both-direction-transfer-records", "observation-produced-zero-signatures", "signature-exchange-refused", "duplicate-process-excluded", "network-mismatch-pauses-and-recovers", "crash-restart-checkpoints-and-records-retained", "graceful-stop", "only-read-rpc-methods"}
+	if report.SchemaVersion != 2 || report.Scope != "isolated-observation-transfer-v2" || report.ArtifactSHA256 != artifact || report.State != "checks-passed" || report.Error != "" || len(report.Checks) != len(expected) {
+		return errors.New("invalid candidate observation-transfer report")
 	}
 	for i, check := range expected {
 		if report.Checks[i] != check {
-			return errors.New("candidate report omits required smoke check")
+			return errors.New("candidate report omits required observation-transfer check")
+		}
+	}
+	return nil
+}
+
+// Historical v1 reports remain readable in local history, but TestCandidate
+// accepts only the stronger v2 report for a new execution.
+func validateStoredCandidateReport(report CandidateReport, artifact string) error {
+	if validateCandidateReport(report, artifact) == nil {
+		return nil
+	}
+	expected := []string{"keyless-start-and-both-chain-observation", "signature-exchange-refused", "duplicate-process-excluded", "crash-restart-checkpoint-retained", "graceful-stop", "only-read-rpc-methods"}
+	if report.SchemaVersion != 1 || report.Scope != "isolated-observation-smoke-v1" || report.ArtifactSHA256 != artifact || report.State != "smoke-passed" || report.Error != "" || len(report.Checks) != len(expected) {
+		return errors.New("invalid stored candidate report")
+	}
+	for i, check := range expected {
+		if report.Checks[i] != check {
+			return errors.New("stored candidate report omits required historical check")
 		}
 	}
 	return nil
@@ -293,7 +311,7 @@ func (s *Store) candidateResult(digest, platform, artifact string) *CandidateRes
 	if strictJSON(raw, &result) != nil || result.ReleaseDigest != digest || result.Platform != platform || result.ArtifactSHA256 != artifact || !hexHash.MatchString(result.CheckerSHA256) || result.FinishedAt.Before(result.StartedAt) {
 		return nil
 	}
-	if validateCandidateReport(result.Report, artifact) != nil {
+	if validateStoredCandidateReport(result.Report, artifact) != nil {
 		result.Report.State = "failed"
 	}
 	return &result

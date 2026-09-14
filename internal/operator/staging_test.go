@@ -89,12 +89,19 @@ func TestCandidateIsolationPolicyRejectsHostAccess(t *testing.T) {
 }
 
 func TestCandidateReportRequiresEveryNamedCheck(t *testing.T) {
-	report := CandidateReport{SchemaVersion: 1, Scope: "isolated-observation-smoke-v1", ArtifactSHA256: strings.Repeat("1", 64), State: "smoke-passed", Checks: []string{"keyless-start-and-both-chain-observation", "signature-exchange-refused", "duplicate-process-excluded", "crash-restart-checkpoint-retained", "graceful-stop", "only-read-rpc-methods"}}
+	report := CandidateReport{SchemaVersion: 2, Scope: "isolated-observation-transfer-v2", ArtifactSHA256: strings.Repeat("1", 64), State: "checks-passed", Checks: []string{"pinned-networks-and-both-direction-transfer-records", "observation-produced-zero-signatures", "signature-exchange-refused", "duplicate-process-excluded", "network-mismatch-pauses-and-recovers", "crash-restart-checkpoints-and-records-retained", "graceful-stop", "only-read-rpc-methods"}}
 	if err := validateCandidateReport(report, report.ArtifactSHA256); err != nil {
 		t.Fatal(err)
 	}
-	report.Checks[5] = "unchecked"
+	report.Checks[7] = "unchecked"
 	if validateCandidateReport(report, report.ArtifactSHA256) == nil {
 		t.Fatal("unnamed or omitted check accepted")
+	}
+	legacy := CandidateReport{SchemaVersion: 1, Scope: "isolated-observation-smoke-v1", ArtifactSHA256: report.ArtifactSHA256, State: "smoke-passed", Checks: []string{"keyless-start-and-both-chain-observation", "signature-exchange-refused", "duplicate-process-excluded", "crash-restart-checkpoint-retained", "graceful-stop", "only-read-rpc-methods"}}
+	if validateStoredCandidateReport(legacy, legacy.ArtifactSHA256) != nil {
+		t.Fatal("valid historical report became unreadable")
+	}
+	if validateCandidateReport(legacy, legacy.ArtifactSHA256) == nil {
+		t.Fatal("historical smoke report accepted for a new candidate run")
 	}
 }
