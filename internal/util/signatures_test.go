@@ -202,6 +202,35 @@ func TestTransferVerificationDistinctCanonicalConfiguredMembers(t *testing.T) {
 	}
 }
 
+func TestTransferQuorumMatchesReviewedContractFormulaAndIgnoresAliases(t *testing.T) {
+	for _, kind := range []bridge.TransactionType{bridge.TransactionType_koinos, bridge.TransactionType_ethereum} {
+		t.Run(kind.String(), func(t *testing.T) {
+			validators := map[string]ValidatorConfig{}
+			for i := 1; i <= 9; i++ {
+				key, err := crypto.GenerateKey()
+				if err != nil {
+					t.Fatal(err)
+				}
+				pub, _ := btcec.PrivKeyFromBytes(btcec.S256(), crypto.FromECDSA(key))
+				koinos, err := KoinosPublicKeyToAddress(pub.PubKey())
+				if err != nil {
+					t.Fatal(err)
+				}
+				member := ValidatorConfig{EthereumAddress: crypto.PubkeyToAddress(key.PublicKey).Hex(), KoinosAddress: base58.Encode(koinos)}
+				validators[member.EthereumAddress] = member
+				validators[member.KoinosAddress] = member
+				count, required, err := TransferQuorum(kind, validators)
+				if err != nil || count != i || required != (i*5+10)/9 {
+					t.Fatalf("after %d members: count=%d required=%d err=%v", i, count, required, err)
+				}
+			}
+			if _, _, err := TransferQuorum(kind, map[string]ValidatorConfig{"bad": {EthereumAddress: "not-an-address", KoinosAddress: "also-invalid"}}); err == nil {
+				t.Fatal("invalid configured identity lowered quorum")
+			}
+		})
+	}
+}
+
 func TestBroadcastRejectsInvalidTransferBeforeContactingPeers(t *testing.T) {
 	var calls int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { atomic.AddInt32(&calls, 1) }))

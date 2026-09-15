@@ -219,10 +219,17 @@ func TestSignaturePeerHTTPInteroperability(t *testing.T) {
 			}
 			peer := httptest.NewServer(http.HandlerFunc(f.api.SubmitSignature))
 			defer peer.Close()
+			offline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer offline.Close()
 			members := map[string]util.ValidatorConfig{}
 			for i, m := range f.members {
 				if i == 0 {
 					m.ApiUrl = peer.URL
+				}
+				if i == 2 {
+					m.ApiUrl = offline.URL
 				}
 				members[m.KoinosAddress] = m
 				members[m.EthereumAddress] = m
@@ -232,17 +239,16 @@ func TestSignaturePeerHTTPInteroperability(t *testing.T) {
 			a, s := f.signature(1)
 			tx.Validators = []string{a}
 			tx.Signatures = []string{s}
-			// Avoid contacting member 2; its membership is retained only at the receiver.
-			delete(members, f.members[2].KoinosAddress)
-			delete(members, f.members[2].EthereumAddress)
+			// Keep member 2 in the configured three-member set but make its peer
+			// endpoint unavailable. Two signatures must still satisfy 2-of-3.
 			replies, err := util.BroadcastTransaction(tx, crypto.FromECDSA(f.keys[1]), f.members[1].KoinosAddress, members)
 			_, want := f.signature(0)
 			if err != nil || len(replies) != 1 || replies[f.members[0].KoinosAddress] != want {
 				t.Fatal("valid peer interoperability failed", err)
 			}
 			saved, err := f.db.Get(f.id)
-			if err != nil || len(saved.Signatures) != 2 || saved.Status != bridge.TransactionStatus_gathering_signatures {
-				t.Fatal("incorrect merged evidence", err)
+			if err != nil || saved == nil || len(saved.Signatures) != 2 || saved.Status != bridge.TransactionStatus_signed {
+				t.Fatal("incorrect merged evidence", err, saved)
 			}
 		})
 	}

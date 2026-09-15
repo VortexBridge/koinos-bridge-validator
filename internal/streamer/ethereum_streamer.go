@@ -515,7 +515,7 @@ func processEthereumRequestNewSignaturesEvent(
 
 			ethTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
-			if len(ethTx.Signatures) >= ((((len(validators)/2)*10)/3)*2)/10+1 {
+			if signed, quorumErr := util.HasTransferQuorum(ethTx, validators); quorumErr == nil && signed {
 				ethTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
@@ -552,9 +552,10 @@ func processEthereumRequestNewSignaturesEvent(
 				return
 			}
 
-			if ethTx.Status != bridge_pb.TransactionStatus_completed &&
-				len(ethTx.Signatures) >= ((((len(validators)/7)*20)/5)*6)/12+3 {
-				ethTx.Status = bridge_pb.TransactionStatus_signed
+			if ethTx.Status != bridge_pb.TransactionStatus_completed {
+				if signed, quorumErr := util.HasTransferQuorum(ethTx, validators); quorumErr == nil && signed {
+					ethTx.Status = bridge_pb.TransactionStatus_signed
+				}
 			}
 
 			err = ethTxStore.Put(transactionId, ethTx)
@@ -802,9 +803,10 @@ func processEthereumTokensLockedEvent(
 		return
 	}
 
-	if ethTx.Status != bridge_pb.TransactionStatus_completed &&
-		len(ethTx.Signatures) >= (((len(validators)/2)*10)/7) {
-		ethTx.Status = bridge_pb.TransactionStatus_signed
+	if ethTx.Status != bridge_pb.TransactionStatus_completed {
+		if signed, quorumErr := util.HasTransferQuorum(ethTx, validators); quorumErr == nil && signed {
+			ethTx.Status = bridge_pb.TransactionStatus_signed
+		}
 	}
 
 	err = ethTxStore.Put(txIdHex, ethTx)

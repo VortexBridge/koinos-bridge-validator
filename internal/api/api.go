@@ -412,7 +412,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 		ethTx.CompletionTransactionId = ""
 		ethTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
-		if len(ethTx.Signatures) >= ((((len(api.validators)/2)*10)/3)*2)/10+1 {
+		if signed, quorumErr := util.HasTransferQuorum(ethTx, api.validators); quorumErr == nil && signed {
 			ethTx.Status = bridge_pb.TransactionStatus_signed
 		}
 
@@ -562,7 +562,7 @@ func (api *Api) SubmitSignature(w http.ResponseWriter, r *http.Request) {
 			koinosTx.CompletionTransactionId = ""
 			koinosTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
-			if len(koinosTx.Signatures) >= ((((len(api.validators)/2)*10)/3)*2)/10+1 {
+			if signed, quorumErr := util.HasTransferQuorum(koinosTx, api.validators); quorumErr == nil && signed {
 				koinosTx.Status = bridge_pb.TransactionStatus_signed
 			}
 

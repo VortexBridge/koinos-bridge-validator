@@ -324,7 +324,7 @@ func processRequestNewSignaturesEvent(
 
 			koinosTx.Status = bridge_pb.TransactionStatus_gathering_signatures
 
-			if len(koinosTx.Signatures) >= ((((len(validators)/7)*20)/5)*6)/12+3 {
+			if signed, quorumErr := util.HasTransferQuorum(koinosTx, validators); quorumErr == nil && signed {
 				koinosTx.Status = bridge_pb.TransactionStatus_signed
 			}
 
@@ -361,9 +361,10 @@ func processRequestNewSignaturesEvent(
 				return
 			}
 
-			if koinosTx.Status != bridge_pb.TransactionStatus_completed &&
-				len(koinosTx.Signatures) >= ((((len(validators)/2)*10)/3)*2)/10+1 {
-				koinosTx.Status = bridge_pb.TransactionStatus_signed
+			if koinosTx.Status != bridge_pb.TransactionStatus_completed {
+				if signed, quorumErr := util.HasTransferQuorum(koinosTx, validators); quorumErr == nil && signed {
+					koinosTx.Status = bridge_pb.TransactionStatus_signed
+				}
 			}
 
 			err = koinosTxStore.Put(txKey, koinosTx)
@@ -565,9 +566,10 @@ func processKoinosTokensLockedEvent(
 		return
 	}
 
-	if koinosTx.Status != bridge_pb.TransactionStatus_completed &&
-		len(koinosTx.Signatures) >= (((len(validators)/2)*10)/7) {
-		koinosTx.Status = bridge_pb.TransactionStatus_signed
+	if koinosTx.Status != bridge_pb.TransactionStatus_completed {
+		if signed, quorumErr := util.HasTransferQuorum(koinosTx, validators); quorumErr == nil && signed {
+			koinosTx.Status = bridge_pb.TransactionStatus_signed
+		}
 	}
 
 	err = koinosTxStore.Put(txKey, koinosTx)

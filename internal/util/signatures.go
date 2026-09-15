@@ -1,6 +1,8 @@
 package util
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -96,7 +98,76 @@ func transferValidatorAddress(kind bridge.TransactionType, v ValidatorConfig) st
 		}
 		return common.HexToAddress(v.EthereumAddress).Hex()
 	}
-	return v.KoinosAddress
+	b, err := validKoinosAddress(v.KoinosAddress)
+	if err != nil {
+		return ""
+	}
+	return base58.Encode(b)
+}
+
+func validKoinosAddress(address string) ([]byte, error) {
+	b, err := base58.Decode(address)
+	if err != nil || len(b) != 25 || b[0] != 0 {
+		return nil, errors.New("invalid Koinos address")
+	}
+	one := sha256.Sum256(b[:21])
+	two := sha256.Sum256(one[:])
+	if !bytes.Equal(two[:4], b[21:]) {
+		return nil, errors.New("invalid Koinos address checksum")
+	}
+	return b, nil
+}
+
+// TransferQuorum returns the distinct configured destination identities and the
+// threshold enforced by the reviewed bridge contracts. The configuration map
+// contains aliases for both chain identities, so len(validators) is not the
+// validator count. Invalid non-empty identities fail closed rather than
+// silently lowering the threshold.
+func TransferQuorum(kind bridge.TransactionType, validators map[string]ValidatorConfig) (int, int, error) {
+	if kind != bridge.TransactionType_koinos && kind != bridge.TransactionType_ethereum {
+		return 0, 0, errors.New("unknown transfer direction")
+	}
+	identities := map[string]struct{}{}
+	for _, validator := range validators {
+		if kind == bridge.TransactionType_koinos {
+			if validator.EthereumAddress == "" {
+				continue
+			}
+			if !common.IsHexAddress(validator.EthereumAddress) || common.HexToAddress(validator.EthereumAddress) == (common.Address{}) {
+				return 0, 0, errors.New("invalid configured Ethereum validator identity")
+			}
+			identities[common.HexToAddress(validator.EthereumAddress).Hex()] = struct{}{}
+			continue
+		}
+		if validator.KoinosAddress == "" {
+			continue
+		}
+		address, err := validKoinosAddress(validator.KoinosAddress)
+		if err != nil {
+			return 0, 0, errors.New("invalid configured Koinos validator identity")
+		}
+		identities[base58.Encode(address)] = struct{}{}
+	}
+	count := len(identities)
+	if count == 0 {
+		return 0, 0, errors.New("no configured validator identities for transfer direction")
+	}
+	return count, (count*5 + 10) / 9, nil
+}
+
+// HasTransferQuorum verifies the signatures and applies the same threshold as
+// the destination contract. It never substitutes peer availability or a
+// frontend setting for current contract membership.
+func HasTransferQuorum(tx *bridge.Transaction, validators map[string]ValidatorConfig) (bool, error) {
+	verified, err := VerifyTransferSignatures(tx, validators)
+	if err != nil {
+		return false, err
+	}
+	_, required, err := TransferQuorum(tx.Type, validators)
+	if err != nil {
+		return false, err
+	}
+	return len(verified) >= required, nil
 }
 func recoverTransferSigner(kind bridge.TransactionType, signature string, hash []byte) (string, error) {
 	if kind == bridge.TransactionType_koinos {
