@@ -23,6 +23,8 @@ import (
 )
 
 var hostBinary = flag.String("host-binary", "", "compiled exact Linux host tool")
+var hostChecker = flag.String("host-checker", "", "actual isolated candidate checker; requires no host mounts and /candidate/validator")
+
 var hostBundle = flag.String("host-bundle", "", "compiled exact Linux tar bundle")
 
 func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
@@ -53,6 +55,47 @@ func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
 		t.Fatal(e)
 	}
 	a.Digest = v.Digest
+	var candidate operator.CandidateResult
+	var validatorRelease operator.SignedRelease
+	if *hostChecker != "" {
+		validatorBytes, e := os.ReadFile("/candidate/validator")
+		if e != nil {
+			t.Fatal(e)
+		}
+		checkerBytes, e := os.ReadFile(*hostChecker)
+		if e != nil {
+			t.Fatal(e)
+		}
+		vm := s.Manifest
+		vm.Component = "validator"
+		vm.ID = "actual-validator-fixture"
+		vm.Artifacts = []operator.ReleaseArtifact{{Platform: s.Manifest.Artifacts[0].Platform, SHA256: hash(validatorBytes), Size: uint64(len(validatorBytes))}}
+		canonical, e := operator.CanonicalRelease(vm)
+		if e != nil {
+			t.Fatal(e)
+		}
+		validatorRelease = operator.SignedRelease{Manifest: vm, Signatures: []operator.ReleaseSignature{{Publisher: "fixture", Signature: hex.EncodeToString(ed25519.Sign(priv, canonical))}}}
+		verified, e := operator.VerifyRelease(validatorRelease, trust, time.Now())
+		if e != nil {
+			t.Fatal(e)
+		}
+		candidate = operator.CandidateResult{ReleaseDigest: verified.Digest, Platform: vm.Artifacts[0].Platform, ArtifactSHA256: hash(validatorBytes), CheckerSHA256: hash(checkerBytes), StartedAt: time.Now(), Isolation: "local-docker-network-none-readonly-no-host-mounts-uid65532"}
+		output, e := exec.Command(*hostChecker).Output()
+		candidate.FinishedAt = time.Now()
+		if e != nil {
+			t.Fatalf("actual candidate checker failed: %v; report: %s", e, output)
+		}
+		if json.Unmarshal(output, &candidate.Report) != nil || operator.ValidateCandidateObservation(candidate.Report, candidate.ArtifactSHA256) != nil {
+			t.Fatal("actual candidate report invalid")
+		}
+		a.ApprovedAt = time.Now() // Approve only after this actual candidate run finished.
+		for name, value := range map[string]interface{}{"validator-release.json": validatorRelease, "candidate-result.json": candidate} {
+			if e = Atomic(root, name, value); e != nil {
+				t.Fatal(e)
+			}
+		}
+		t.Log("actual isolated checker completed all eight observation-transfer checks")
+	}
 	for name, value := range map[string]interface{}{"release.json": s, "trust.json": trust, "approval.json": a} {
 		if e = Atomic(root, name, value); e != nil {
 			t.Fatal(e)
@@ -79,6 +122,20 @@ func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
 	invoke(install...)
 	before, _ := Read(installed)
 	invoke("doctor")
+	if *hostChecker != "" {
+		args := []string{"--instance", "fixture-host", "--trust", filepath.Join(root, "trust.json"), "--validator-release", filepath.Join(root, "validator-release.json"), "--candidate-result", filepath.Join(root, "candidate-result.json"), "qualify"}
+		invoke(args...)
+		invoke(args...)
+		var record struct {
+			Schema int                      `json:"schemaVersion"`
+			Result operator.CandidateResult `json:"result"`
+		}
+		evidence, e := os.ReadFile(filepath.Join(installed, "candidate.json"))
+		if e != nil || json.Unmarshal(evidence, &record) != nil || record.Schema != 1 || record.Result.ArtifactSHA256 != before.Files["koinos-bridge-validator"] {
+			t.Fatal("actual candidate import not bound to installed bytes")
+		}
+		t.Log("actual checker result imported twice into exact installed bundle")
+	}
 	invoke("--trust", filepath.Join(root, "trust.json"), "--instance", "fixture-host", "authorize")
 	// Real bundled operator, no RPC bindings, no vault, isolated container network.
 	cmd := exec.Command(*hostBinary, append(base, "run")...)

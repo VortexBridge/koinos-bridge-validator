@@ -289,8 +289,14 @@ replace actual runner output with a hand-written success declaration.
 
 Linux acceptance invokes the compiled command twice using synthetic signed
 releases/results, then rejects an incorrect checker hash and verifies the previous
-record survived. A full real-runner → signed bundle → installed activation exercise
-remains outstanding.
+record survived. A fresh fixed-checker → approved bundle → install/import/observe/stop/uninstall
+exercise has now passed in two clean containers using real built executables and
+synthetic publisher signatures. The acceptance test invokes the checker and
+imports its actual eight-check report. The combined harness has no host mounts
+or external network, but uses executable temporary installation storage and
+different resource limits from the standalone candidate runner. Both containers
+share one Docker host. Managed signing activation, real-chain execution and
+independent-host replacement remain outstanding.
 
 
 ## Joined chain evidence
