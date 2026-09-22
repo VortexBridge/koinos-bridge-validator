@@ -510,3 +510,24 @@ Preparing or signing this review is not operator enrollment, release approval or
 permission to bypass chain checks. End-to-end Linux command/reviewer/activation
 acceptance remains outstanding; current tests cover canonical payload binding,
 unsigned-request rejection and missing evidence.
+
+### Actual Koinos replica compatibility check
+
+The managed snapshot reader uses `chain.invoke_system_call` / `get_object` to
+read kernel contract metadata (system space 3, empty zone, contract-address key).
+For pause storage it supplies the contract's `user_mode` caller context and reads
+space 100002. An absent pause object is the reviewed contract's unpaused state;
+malformed object responses still reject activation. The native
+`get_contract_metadata` thunk is not available on the tested Koinos 1.5.2 node.
+The JSON-RPC descriptors must expose `invoke_system_call` and `caller_data`;
+the tested node build uses koinos-proto 2.6.0. Old 1.0.0 descriptors do not suffice.
+
+`TestIsolatedKoinosAcceptance` is opt-in with `-isolated-koinos-acceptance` and
+expects the documented Prompt 03 synthetic chain, bridge and irreversible height
+68. It reads live RPC at `127.0.0.1:18081` and replica RPC at `127.0.0.1:18082`.
+In the isolated Docker laboratory, same-container loopback forwarders connect
+those ports to the separate live/replica JSON-RPC services on the internal network.
+This preserves the endpoint policy; ordinary HTTP remote endpoints remain rejected.
+The test performs no mutations and uses no keys. It intentionally fails if the
+fixture's chain, code, membership or height changes. It is actual reader coverage,
+not evidence of independent hosts or a completed managed signer lifecycle.

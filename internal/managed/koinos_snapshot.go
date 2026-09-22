@@ -58,7 +58,7 @@ func snapshotCall(ctx context.Context, endpoint, method string, params interface
 	}
 	if method == "chain.invoke_system_call" {
 		p, ok := params.(map[string]interface{})
-		if !ok || (p["name"] != "get_contract_metadata" && p["name"] != "get_object") {
+		if !ok || p["name"] != "get_object" {
 			return errors.New("snapshot system call forbidden")
 		}
 	}
@@ -184,7 +184,25 @@ func (s *KoinosSnapshot) system(ctx context.Context, name string, args []byte) (
 	var result struct {
 		Value string `json:"value"`
 	}
-	if e := snapshotCall(ctx, s.replica, "chain.invoke_system_call", map[string]interface{}{"name": name, "args": base64.URLEncoding.EncodeToString(args)}, &result); e != nil {
+	var lookup sys.GetObjectArguments
+	if name != "get_object" || proto.Unmarshal(args, &lookup) != nil || lookup.Space == nil {
+		return nil, errors.New("invalid read-only object lookup")
+	}
+	contract, _ := base58.Decode(s.live.Profile.Contract)
+	params := map[string]interface{}{"name": name, "args": base64.URLEncoding.EncodeToString(args)}
+	if lookup.Space.System {
+		if lookup.Space.Id != 3 || len(lookup.Space.Zone) != 0 || !bytes.Equal(lookup.Key, contract) {
+			return nil, errors.New("unsupported kernel object lookup")
+		}
+	} else {
+		if lookup.Space.Id != 100002 || !bytes.Equal(lookup.Space.Zone, contract) || len(lookup.Key) != 0 {
+			return nil, errors.New("unsupported contract object lookup")
+		}
+		// Read-only execution must use the contract's user privilege to read
+		// its own pause storage. The default kernel context cannot access it.
+		params["caller_data"] = map[string]interface{}{"caller": s.live.Profile.Contract, "caller_privilege": "user_mode"}
+	}
+	if e := snapshotCall(ctx, s.replica, "chain.invoke_system_call", params, &result); e != nil {
 		return nil, e
 	}
 	b, e := base64.URLEncoding.DecodeString(result.Value)
@@ -234,15 +252,18 @@ func (s *KoinosSnapshot) Read(ctx context.Context, member string, transactions [
 		return out, errors.New("irreversible header hash mismatch")
 	}
 	contract, _ := base58.Decode(s.live.Profile.Contract)
-	raw, e = s.system(ctx, "get_contract_metadata", wireBytes(nil, 1, contract))
+	// The reviewed node exposes contract metadata in kernel object space 3.
+	// get_contract_metadata is not a native enabled thunk on Koinos 1.5.2.
+	metadataArgs, _ := proto.Marshal(&sys.GetObjectArguments{Space: &sys.ObjectSpace{System: true, Id: 3}, Key: contract})
+	raw, e = s.system(ctx, "get_object", metadataArgs)
 	if e != nil {
 		return out, e
 	}
-	outer, e := snapshotWire(raw)
-	if e != nil || len(outer.data[1]) != 1 || !outer.only(nil, []protowire.Number{1}) {
+	var storedMetadata sys.GetObjectResult
+	if proto.Unmarshal(raw, &storedMetadata) != nil || storedMetadata.Value == nil || !storedMetadata.Value.Exists {
 		return out, errors.New("code metadata missing")
 	}
-	meta, e := snapshotWire(outer.data[1][0])
+	meta, e := snapshotWire(storedMetadata.Value.Value)
 	if e != nil || !meta.only([]protowire.Number{2, 3, 4, 5}, []protowire.Number{1}) || len(meta.data[1]) != 1 || !hashPayload(meta.data[1][0]) || hex.EncodeToString(meta.data[1][0][2:]) != s.live.Profile.CodeHash {
 		return out, errors.New("irreversible code hash differs from reviewed build")
 	}
@@ -296,7 +317,7 @@ func (s *KoinosSnapshot) Read(ctx context.Context, member string, transactions [
 		return out, e
 	}
 	var pause sys.GetObjectResult
-	if proto.Unmarshal(raw, &pause) != nil || pause.Value == nil {
+	if proto.Unmarshal(raw, &pause) != nil || (pause.Value == nil && len(raw) != 0) {
 		return out, errors.New("pause state unavailable")
 	}
 	out.Completed = map[string]bool{}
@@ -339,7 +360,8 @@ func (s *KoinosSnapshot) Read(ctx context.Context, member string, transactions [
 	out.StateRoot = hex.EncodeToString(block.Receipt.StateMerkleRoot)
 	out.CodeHash = s.live.Profile.CodeHash
 	out.Nonce = state.ints[2]
-	out.Paused = pause.Value.Exists
+	// An absent object serializes to an empty GetObjectResult on the real node.
+	out.Paused = pause.GetValue().GetExists()
 	out.ObservedAt = time.Now()
 	// Stable ordering makes checkpoint encodings reproducible.
 	for name := range members {

@@ -25,7 +25,7 @@ import (
 )
 
 func TestKoinosSnapshotRequiresStableIrreversibleReplica(t *testing.T) {
-	cases := []string{"good", "three-members", "membership-order", "membership-incomplete", "paused", "completed", "replica-ahead", "replica-behind", "replica-root", "replica-id", "header", "live-network", "replica-network", "network-changed", "code", "authority", "authority-wire", "uninitialized", "bridge-id", "member-count", "seed-missing", "duplicate-member", "status-wire", "status-value", "pause-missing", "replica-moves", "lib-advances", "anchor-changes"}
+	cases := []string{"good", "pause-absent", "three-members", "membership-order", "membership-incomplete", "paused", "completed", "replica-ahead", "replica-behind", "replica-root", "replica-id", "header", "live-network", "replica-network", "network-changed", "code", "authority", "authority-wire", "uninitialized", "bridge-id", "member-count", "seed-missing", "duplicate-member", "status-wire", "status-value", "pause-wire", "replica-moves", "lib-advances", "anchor-changes"}
 	for _, kind := range cases {
 		t.Run(kind, func(t *testing.T) {
 			p := transferVectors(t)[3].Profile
@@ -127,6 +127,10 @@ func TestKoinosSnapshotRequiresStableIrreversibleReplica(t *testing.T) {
 							Entry    uint32 `json:"entry_point"`
 							Contract string `json:"contract_id"`
 							Args     string `json:"args"`
+							Caller   *struct {
+								Address   string `json:"caller"`
+								Privilege string `json:"caller_privilege"`
+							} `json:"caller_data"`
 						}
 						if json.Unmarshal(q.Params, &args) != nil {
 							t.Error("bad args")
@@ -137,9 +141,15 @@ func TestKoinosSnapshotRequiresStableIrreversibleReplica(t *testing.T) {
 						}
 						var output []byte
 						if q.Method == "chain.invoke_system_call" {
-							switch args.Name {
-							case "get_contract_metadata":
-								expected := wireBytes(nil, 1, member)
+							var lookup sys.GetObjectArguments
+							if args.Name != "get_object" || proto.Unmarshal(data, &lookup) != nil || lookup.Space == nil {
+								t.Fatal("invalid system lookup")
+							}
+							if lookup.Space.System {
+								if args.Caller != nil {
+									t.Error("kernel lookup must use default context")
+								}
+								expected, _ := proto.Marshal(&sys.GetObjectArguments{Space: &sys.ObjectSpace{System: true, Id: 3}, Key: member})
 								if !bytes.Equal(data, expected) {
 									t.Error("wrong contract metadata request")
 								}
@@ -154,19 +164,23 @@ func TestKoinosSnapshotRequiresStableIrreversibleReplica(t *testing.T) {
 								if kind == "authority-wire" {
 									meta = wireBytes(meta, 3, []byte{1})
 								}
-								output = wireBytes(nil, 1, meta)
-							case "get_object":
+								output, _ = proto.Marshal(&sys.GetObjectResult{Value: &sys.DatabaseObject{Exists: true, Value: meta}})
+							} else {
 								var a sys.GetObjectArguments
 								if proto.Unmarshal(data, &a) != nil || a.Space == nil || a.Space.System || a.Space.Id != 100002 || !bytes.Equal(a.Space.Zone, member) || len(a.Key) != 0 {
 									t.Error("wrong pause storage lookup")
 								}
+								if args.Caller == nil || args.Caller.Address != p.Contract || args.Caller.Privilege != "user_mode" {
+									t.Error("pause lookup requires contract user context")
+								}
 								object := &sys.GetObjectResult{Value: &sys.DatabaseObject{Exists: kind == "paused"}}
-								if kind == "pause-missing" {
+								if kind == "pause-wire" || kind == "pause-absent" {
 									object.Value = nil
 								}
 								output, _ = proto.Marshal(object)
-							default:
-								t.Error("unexpected system call", args.Name)
+								if kind == "pause-wire" {
+									output = []byte{0xff}
+								}
 							}
 							result = map[string]string{"value": base64.URLEncoding.EncodeToString(output)}
 						} else {
@@ -262,7 +276,7 @@ func TestKoinosSnapshotRequiresStableIrreversibleReplica(t *testing.T) {
 			}
 			tx := strings.Repeat("12", 32)
 			state, e := snapshot.Read(context.Background(), base58.Encode(seed), []string{tx})
-			if kind == "good" || kind == "three-members" || kind == "paused" || kind == "completed" {
+			if kind == "good" || kind == "pause-absent" || kind == "three-members" || kind == "paused" || kind == "completed" {
 				if e != nil {
 					t.Fatal(e)
 				}
