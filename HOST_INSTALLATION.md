@@ -421,3 +421,23 @@ caller lifecycle; this library callback is not an interruptible remote unlock AP
    verify all exports and backup formats omit keys/passphrases.
 5. Re-run race/static/Linux checks after integration, publish sanitized evidence,
    and keep every unresolved public deployment in observation-only mode.
+
+## Runtime composition
+
+`managed.PrepareRuntime` reads a strict private `RuntimeConfig` and connects the
+finalized chain readers, bidirectional reconciliation, installed candidate/release
+checks and authenticated host review into one locked session. It does not unlock
+or start it. The supervisor must retain the installation lock for its lifetime.
+No configuration readiness flags are accepted. Public identities rejected by the
+chain gate cannot create a managed session.
+
+The configuration digest binds the exact bytes parsed, preventing a later file
+read from accidentally approving a different configuration. Koinos block hints
+are locator inputs only; the receipt reader independently verifies inclusion and
+finality. Token mappings must be unambiguous in both directions. Runtime changes
+require renewed review and explicit reconciliation; no implicit journal migration
+is performed.
+
+Composition compiles and passes negative configuration tests and managed race
+checks. The positive installed-runtime path, interactive command and real-node
+acceptance remain unverified. Do not treat successful preparation as activation.
