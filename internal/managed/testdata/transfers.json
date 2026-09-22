@@ -1,0 +1,179 @@
+{
+  "scope": "Independent ethers/protobufjs synthetic transfer boundary vectors",
+  "vectors": [
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "18446744073709551615",
+        "token": "0x1111111111111111111111111111111111111111",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "relayer": "0x1111111111111111111111111111111111111111",
+        "amount": "1",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "d27fd22af4facd36e3ecd110f28f7d31a12f319c432609c3682eaa7518e15c39"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "18446744073709551615",
+        "token": "0x1111111111111111111111111111111111111111",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "relayer": "0x1111111111111111111111111111111111111111",
+        "amount": "9223372036854775808",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "7a00ae5aaa631d6ef84c6c6a310bb6a22e1c8d7911e383017acb8da8c75ab413"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-evm",
+        "name": "Fixture EVM",
+        "family": "evm",
+        "environment": "local",
+        "networkId": "31337",
+        "bridgeChainId": 2,
+        "contract": "0x1111111111111111111111111111111111111111",
+        "codec": "evm-1e82614-v1",
+        "sourceCommit": "1e82614bdb61a36aa3309e97001666cf1e14f7d1",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "18446744073709551615",
+        "token": "0x1111111111111111111111111111111111111111",
+        "recipient": "0x1111111111111111111111111111111111111111",
+        "relayer": "0x1111111111111111111111111111111111111111",
+        "amount": "18446744073709551615",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "212119b6a40513866bd5bce5ba889b84fe5993bdc9fb0475df32d0352fdfcdb7"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "0",
+        "token": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "recipient": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "relayer": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "amount": "1",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "317ce8aa389bd04c64c0b5c03bedb1ee02f6ba2169f2fc81b91ad64e7ec25bd9"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "0",
+        "token": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "recipient": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "relayer": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "amount": "9223372036854775808",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "81486bc3e97f9944f0b5aa646264d692ace77ff07a79e6989dbd5d8bfd3e155a"
+    },
+    {
+      "profile": {
+        "schemaVersion": 1,
+        "id": "fixture-koinos",
+        "name": "Fixture Koinos",
+        "family": "koinos",
+        "environment": "local",
+        "networkId": "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==",
+        "bridgeChainId": 1,
+        "contract": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "codec": "koinos-f7a499e-v1",
+        "sourceCommit": "f7a499e51fe54406deb30788df526b39caead1c4",
+        "codeHash": "",
+        "reviewEvidence": "",
+        "reviewed": false
+      },
+      "transfer": {
+        "transactionId": "1212121212121212121212121212121212121212121212121212121212121212",
+        "operationId": "0",
+        "token": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "recipient": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "relayer": "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8",
+        "amount": "18446744073709551615",
+        "payment": "0",
+        "metadata": "synthetic transfer",
+        "expiration": "2000000000000"
+      },
+      "digest": "40736a5679b8bea9b972519aae6a4f949c40cf2db586f0b0a70da2bda1523a9b"
+    }
+  ]
+}

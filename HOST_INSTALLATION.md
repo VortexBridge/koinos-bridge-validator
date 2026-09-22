@@ -132,6 +132,31 @@ protected local mechanism. Passphrases never belong in arguments, environment,
 ordinary files or the operator API. The agreed pilot policy is manual unlock;
 no unattended restart/broker is approved or implemented.
 
+## Transfer encoding and recovery
+
+The managed path now encodes a typed transfer reconstructed by an independent
+reader instead of accepting an opaque digest from a peer. EVM and Koinos vectors
+are generated independently with ethers/protobufjs, including the unsigned 64-bit
+boundary. The EVM codec avoids the legacy uint64-to-int64 conversion. This does
+not change or approve the legacy transfer runtime.
+
+`OperationVerifier` binds both reviewed local profiles, fresh finalized source
+and destination roots, canonical transaction/operation identity and final
+completion status. It rejects multiple bridge events in an EVM transaction when
+the destination Koinos codec cannot distinguish their operation index. Recovery
+checks every retained operation, rejects changed payloads or a completed-to-pending
+regression, and binds the new checkpoint to the receipts it checked.
+
+The reader interface still requires concrete chain adapters. Current reader tests
+use synthetic receipt observations, not live chain proofs. The vectors verify
+encoding agreement, not complete contract execution or public deployment safety.
+Reproduce them from this repository using:
+
+```sh
+node scripts/generate-transfer-vectors.cjs /absolute/interface-bridge
+go test -race ./internal/managed
+```
+
 ## Replacement and fencing
 
 A same-host stop is enforced by process/data locks and key disposal. These locks
