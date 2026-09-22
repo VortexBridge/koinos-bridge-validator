@@ -159,8 +159,9 @@ calculation. Endpoints are trusted read providers, not light-client proofs.
 HTTP fixture tests exercise the actual request/response parsing, including
 negative source and destination cases. No public RPC or real chain execution is
 claimed by those tests. Historical receipt finality does **not** establish Koinos
-code provenance or current validator membership. The EVM-to-Koinos reader and
-irreversible Koinos state adapter remain outstanding. The vectors verify
+code provenance or current validator membership. The EVM-to-Koinos reader remains
+outstanding. A separate irreversible Koinos state adapter is described below; its
+real-node acceptance remains outstanding. The vectors verify
 encoding agreement, not complete contract execution or public deployment safety.
 Reproduce them from this repository using:
 
@@ -168,6 +169,34 @@ Reproduce them from this repository using:
 node scripts/generate-transfer-vectors.cjs /absolute/interface-bridge
 go test -race ./internal/managed
 ```
+
+## Irreversible Koinos read replica (development adapter)
+
+`managed.NewKoinosSnapshot` reads code metadata, initialized bridge metadata,
+complete validator membership, pause state and selected transfer completion
+states from a separate replica pinned exactly at the live node's current last
+irreversible block. It checks the replica height, block identity and state root
+against the live branch's block receipt, verifies the canonical header hash,
+then rechecks both nodes and the live anchor after the reads. Any mismatch or
+advance requires a refreshed replica and retry. An ordinary node following the
+head does not meet this requirement.
+
+Membership enumeration requires a known current member as a seed. The reviewed
+contract returns no members for an empty or absent seed. The adapter enumerates
+both directions, checks ordering/uniqueness, and requires the resulting union to
+match the contract's declared count. An unavailable seed blocks readiness; it is
+never interpreted as proof that all previous validators were retired.
+
+Only reviewed local profiles are accepted. Providers and their system-call
+semantics remain trusted: matching a reported state root is not a cryptographic
+proof of individual RPC results. Unsupported contract authority overrides and
+malformed response fields fail closed. Twenty-eight HTTP fixture scenarios
+exercise the adapter, including membership pagination and changing anchors.
+
+This is a development library, not an installed replica service. Provisioning,
+replaying/freezing and refreshing an actual isolated Koinos replica have **not**
+been exercised. The managed activation command does not use this adapter yet.
+Public-route readiness and independent-host acceptance remain blocked.
 
 ## Replacement and fencing
 
