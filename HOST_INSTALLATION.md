@@ -664,3 +664,18 @@ These containers share one physical Docker host and synthetic control reviews.
 This proves the installed recovery path on actual development chains, not two
 independently administered hosts or complete secrecy/backup acceptance. Reverse
 route and independent-host lifecycle exercises remain required.
+
+## Mutable, non-authoritative Koinos receipt hints
+
+The runtime checks pinned `blockHints` first, then reads the private installation
+file `operation-hints.json` for new receipts. The file is a JSON map from canonical
+`transaction-id:event-sequence` strings to positive block heights, without the
+`koinos-to-evm/` prefix. Update it atomically with owner-only permissions. It must
+not exceed 512 KiB or 4096 entries; duplicate keys and invalid heights are rejected.
+
+These hints only locate source receipts. Every receipt, transaction ID, event,
+block hash, network, destination and irreversible anchor is still independently
+checked. Changing a hint grants no authority and does not modify the approved
+runtime configuration or journal policy. Missing or incorrect hints reject the
+operation. This permits new Koinos transfers without repeated configuration and
+host-review changes.

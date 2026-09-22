@@ -1,10 +1,13 @@
 package managed
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -74,14 +77,7 @@ func PrepareRuntime(root, configPath, trustPath string) (*Session, string, error
 		return nil, "", e
 	}
 	toEVM, e := NewKoinosEVMReader(cfg.Koinos, cfg.EVM, reverse, cfg.Lifetime, func(ctx context.Context, id string) (uint64, error) {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		height, ok := cfg.BlockHints[id]
-		if !ok || height == 0 {
-			return 0, errors.New("source block hint unavailable")
-		}
-		return height, nil
+		return locateRuntimeOperation(ctx, root, cfg.BlockHints, id)
 	})
 	if e != nil {
 		return nil, "", e
@@ -111,4 +107,60 @@ func PrepareRuntime(root, configPath, trustPath string) (*Session, string, error
 	p := Policy{Instance: cfg.Instance, ArtifactSHA256: artifact, ConfigSHA256: configuration, EVMAddress: cfg.EVMAddress, KoinosAddress: cfg.KoinosAddress, PreviousEVM: cfg.PreviousEVM, PreviousKoinos: cfg.PreviousKoinos}
 	session, e := Open(filepath.Join(root, "managed-session"), p, reviewed)
 	return session, cfg.Vault, e
+}
+
+// Hints only locate a receipt. The reader independently proves transaction,
+// event, block hash, chain identity and irreversible ancestry. They grant no
+// signing authority and can change without changing the approved policy.
+func locateRuntimeOperation(ctx context.Context, root string, pinned map[string]uint64, id string) (uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if height := pinned[id]; height != 0 {
+		return height, nil
+	}
+	raw, err := worker.ReadPrivateFile(filepath.Join(root, "operation-hints.json"), 512<<10)
+	if err != nil {
+		return 0, errors.New("source block hint unavailable")
+	}
+	hints, err := decodeOperationHints(raw)
+	if err != nil || hints[id] == 0 {
+		return 0, errors.New("source block hint unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return hints[id], nil
+}
+
+func decodeOperationHints(raw []byte) (map[string]uint64, error) {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("invalid hints")
+	}
+	hints := map[string]uint64{}
+	for d.More() {
+		token, err = d.Token()
+		id, ok := token.(string)
+		if err != nil || !ok || id == "" || len(hints) >= 4096 {
+			return nil, errors.New("invalid hint identity")
+		}
+		if _, exists := hints[id]; exists {
+			return nil, errors.New("duplicate hint")
+		}
+		var height uint64
+		if d.Decode(&height) != nil || height == 0 {
+			return nil, errors.New("invalid hint height")
+		}
+		hints[id] = height
+	}
+	if token, err = d.Token(); err != nil || token != json.Delim('}') {
+		return nil, errors.New("invalid hints")
+	}
+	var trailing interface{}
+	if d.Decode(&trailing) != io.EOF {
+		return nil, errors.New("trailing hints")
+	}
+	return hints, nil
 }
