@@ -556,3 +556,28 @@ preservation of the previous draft when a control record disappears. A valid
 Linux machine ID is required. The Docker acceptance run supplies an explicitly
 synthetic machine ID and synthetic control records; it does not establish actual
 host-security approval, candidate qualification, unlock or signer activation.
+
+### First actual installed signing exercise
+
+The Prompt 03 laboratory has now exercised `activate` from the exact installed
+bundle against both actual development chains. The candidate checker ran with
+no network and no host mounts before publisher/local approvals were assembled
+from synthetic reviewer identities. A separate runtime container used that
+qualified installation, a synthetic encrypted vault, and a signed synthetic
+host review. The review exercises the software gate; it is not a review of real
+operator infrastructure.
+
+Minimal containers need a writable private user configuration directory for
+same-user signer locks. In this fixture, `XDG_CONFIG_HOME` points inside the
+private installation directory. It contains lock files, not the vault password.
+An absent/unwritable user configuration path rejects activation before unlock.
+
+The actual terminal exercise required hidden manual unlock, signed the verified
+EVM-to-Koinos pending operation, stopped cleanly, then required another manual
+unlock on restart. One operation was retained and the same signature returned.
+A concurrent activation on the same installation was rejected. Independent
+koilib recovery identified the expected Koinos signer from that public signature.
+
+This proves one installed-container activation/sign/stop/restart path. It does
+not prove host-loss recovery, two independent hosts, production host controls,
+secret-free backup/restore, destination execution or fenced replacement.
