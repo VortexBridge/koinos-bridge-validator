@@ -548,3 +548,11 @@ zero relayer payment. The reader also queries irreversible Koinos completion
 status and reconstructs the destination digest. The synthetic destination token was deployed and approved separately at the
 height-132 checkpoint. This reader check does not independently enforce token
 support or prove signature issuance or completed delivery on Koinos.
+
+`TestLinuxBundleCLIInstallRunStop` optionally accepts `-host-review-request` to
+exercise review drafting with the exact privately installed executable. It
+checks installed artifact/configuration/control hashes, unsigned output and
+preservation of the previous draft when a control record disappears. A valid
+Linux machine ID is required. The Docker acceptance run supplies an explicitly
+synthetic machine ID and synthetic control records; it does not establish actual
+host-security approval, candidate qualification, unlock or signer activation.

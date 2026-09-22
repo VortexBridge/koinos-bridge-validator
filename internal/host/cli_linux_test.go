@@ -25,6 +25,8 @@ import (
 var hostBinary = flag.String("host-binary", "", "compiled exact Linux host tool")
 var hostChecker = flag.String("host-checker", "", "actual isolated candidate checker; requires no host mounts and /candidate/validator")
 
+var hostReviewRequest = flag.Bool("host-review-request", false, "exercise installed review request; requires a provisioned Linux machine-id")
+
 var hostBundle = flag.String("host-bundle", "", "compiled exact Linux tar bundle")
 
 func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
@@ -122,6 +124,9 @@ func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
 	invoke(install...)
 	before, _ := Read(installed)
 	invoke("doctor")
+	if *hostReviewRequest {
+		checkInstalledReviewRequest(t, root, installed, before)
+	}
 	if *hostChecker != "" {
 		args := []string{"--instance", "fixture-host", "--trust", filepath.Join(root, "trust.json"), "--validator-release", filepath.Join(root, "validator-release.json"), "--candidate-result", filepath.Join(root, "candidate-result.json"), "qualify"}
 		invoke(args...)
@@ -199,4 +204,65 @@ func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
 	if json.Unmarshal(invoke("doctor"), &public) != nil || public["managedSigning"] != false {
 		t.Fatal("misleading readiness")
 	}
+}
+
+// Actual Linux executable issuance is distinct from the synthetic human review.
+// No fixture control text below asserts that this container is a secure host.
+func checkInstalledReviewRequest(t *testing.T, root, installed string, installation Installation) {
+	t.Helper()
+	controls := []string{"patched-linux-service", "administrative-access-firewall", "private-management", "encrypted-storage-vault", "hibernation-hypervisor", "patch-response", "monitoring-alerts", "log-retention", "encrypted-offhost-backup-restore", "release-maintenance", "emergency-access"}
+	evidence := filepath.Join(root, "host-evidence")
+	if e := os.Mkdir(evidence, 0700); e != nil {
+		t.Fatal(e)
+	}
+	for _, name := range controls {
+		if e := os.WriteFile(filepath.Join(evidence, name+".txt"), []byte("SYNTHETIC TEST RECORD ONLY; no actual host-security approval."), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	config := map[string]interface{}{"schemaVersion": 1, "instance": "fixture-host", "hostEvidence": evidence}
+	if e := Atomic(root, "runtime.json", config); e != nil {
+		t.Fatal(e)
+	}
+	binary := filepath.Join(installed, "releases", installation.Artifact, "vortex-host")
+	args := []string{"--root", installed, "--config", filepath.Join(root, "runtime.json"), "--trust", filepath.Join(root, "trust.json"), "review-request"}
+	output, e := exec.Command(binary, args...).CombinedOutput()
+	if e != nil {
+		t.Fatalf("installed review request: %v %s", e, output)
+	}
+	var request struct {
+		Review struct {
+			Instance    string            `json:"instance"`
+			HostBinding string            `json:"hostBinding"`
+			Artifact    string            `json:"artifactSha256"`
+			Config      string            `json:"configSha256"`
+			Evidence    map[string]string `json:"evidence"`
+		} `json:"review"`
+		Canonical string `json:"canonicalHex"`
+		Notice    string `json:"notice"`
+	}
+	raw, e := os.ReadFile(filepath.Join(installed, "host-review-request.json"))
+	if e != nil || json.Unmarshal(raw, &request) != nil {
+		t.Fatal("request missing")
+	}
+	cfg, _ := os.ReadFile(filepath.Join(root, "runtime.json"))
+	if request.Review.Instance != "fixture-host" || request.Review.Artifact != installation.Files["vortex-host"] || request.Review.Config != hash(cfg) || len(request.Review.HostBinding) != 64 || len(request.Review.Evidence) != len(controls) || request.Canonical == "" {
+		t.Fatal("request not bound to installed executable, configuration and controls")
+	}
+	var object map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &object)
+	if _, ok := object["signature"]; ok {
+		t.Fatal("unsigned request contains authorization")
+	}
+	if e := os.Remove(filepath.Join(evidence, controls[0]+".txt")); e != nil {
+		t.Fatal(e)
+	}
+	if exec.Command(binary, args...).Run() == nil {
+		t.Fatal("missing control accepted")
+	}
+	after, _ := os.ReadFile(filepath.Join(installed, "host-review-request.json"))
+	if !bytes.Equal(raw, after) {
+		t.Fatal("failed request replaced existing draft")
+	}
+	t.Log("exact installed Linux executable produced an unsigned, bound review request; missing control rejected without overwriting draft")
 }
