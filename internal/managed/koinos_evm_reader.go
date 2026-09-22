@@ -57,7 +57,7 @@ func NewKoinosEVMReader(source, destination operator.Binding, tokens map[string]
 }
 func rpcRead(ctx context.Context, endpoint, method string, params interface{}, out interface{}) error {
 	switch method {
-	case "eth_chainId", "eth_getBlockByNumber", "eth_getCode", "eth_call":
+	case "eth_chainId", "eth_getBlockByNumber", "eth_getTransactionReceipt", "eth_getCode", "eth_call":
 	default:
 		return errors.New("method is not read-only allowlisted")
 	}

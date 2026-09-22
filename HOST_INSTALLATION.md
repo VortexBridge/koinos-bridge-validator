@@ -159,9 +159,9 @@ calculation. Endpoints are trusted read providers, not light-client proofs.
 HTTP fixture tests exercise the actual request/response parsing, including
 negative source and destination cases. No public RPC or real chain execution is
 claimed by those tests. Historical receipt finality does **not** establish Koinos
-code provenance or current validator membership. The EVM-to-Koinos reader remains
-outstanding. A separate irreversible Koinos state adapter is described below; its
-real-node acceptance remains outstanding. The vectors verify
+code provenance or current validator membership. The inverse reader and a
+separate irreversible Koinos state adapter are described below; their real-node
+acceptance remains outstanding. The vectors verify
 encoding agreement, not complete contract execution or public deployment safety.
 Reproduce them from this repository using:
 
@@ -169,6 +169,29 @@ Reproduce them from this repository using:
 node scripts/generate-transfer-vectors.cjs /absolute/interface-bridge
 go test -race ./internal/managed
 ```
+
+## EVM-to-Koinos receipt reader
+
+`managed.NewEVMKoinosReader` reads a successful EVM transaction receipt, checks
+canonical block inclusion below the finalized height, and pins the reviewed
+source contract code to that block. Every receipt log must have consistent block
+and transaction positions. Exactly one bridge lock event is permitted, because
+the reviewed Koinos completion codec binds the transaction hash without an event
+index. This applies even if a second bridge event targets another destination.
+
+Event ABI decoding is followed by exact re-encoding; amounts must fit unsigned
+64-bit values, the event time must match the block time in milliseconds, and the
+destination chain and configured token mapping must match. The reader derives
+the signing expiry from that time and the locally configured lifetime. Completion
+is read through `KoinosSnapshot`, then source canonicality, finality and network
+identity are checked again. Providers remain trusted; this is not a light client.
+
+Twenty-five HTTP receipt scenarios cover unsigned limits, malformed and ambiguous
+events, source reorganization/finality regression and destination status handling.
+These tests substitute typed destination evidence; the separate snapshot suite
+tests its actual RPC parsing. Neither suite proves the combined flow against real
+chains. Paused state and current membership still require activation-time checks;
+this reader alone does not authorize a signature or submit a transaction.
 
 ## Irreversible Koinos read replica (development adapter)
 
