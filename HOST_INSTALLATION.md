@@ -1,11 +1,19 @@
 # Linux host bundle and managed signer boundary (Prompt 03, in progress)
 
-This development implementation is **not the completed Prompt 03**. The host
-bundle installs and runs the private observation service. The managed signer
-library is exercised with encrypted synthetic keys and an in-process test
-verifier; it is not wired into the transfer streamers or an operator activation
-command. Public signing stays disabled. Do not use the legacy signer command to
-bypass that boundary.
+Prompt 03 remains incomplete. The packaged host now supports private observation,
+manual managed activation against isolated development chains, both transfer
+routes, fenced replacement after dual-identity retirement, and same-host artifact
+upgrades preserving signatures. These paths have been exercised with synthetic
+keys and actual chain processes on one physical Docker host. Public signing stays
+disabled; never bypass this boundary through the legacy signer.
+
+The remaining acceptance requires two clean development hosts running the exact
+approved artifact, boot-time service/log-retention checks and operational backup
+and secrecy evidence. Two containers are not two hosts. Production operator
+independence and production-chain authorization are separate decisions.
+
+Later milestone sections retain dated laboratory evidence and its limitations.
+The current status above supersedes their historical statements of pending work.
 
 ## Build and verify the bundle
 
@@ -59,8 +67,8 @@ without the signed release/approval and archive cannot authorize a managed signe
 
 `InstalledVerifier` joins these local checks to the running executable and exact
 configuration bytes on every inspection, and caps evidence validity at approval
-expiry. The chain/recovery verifier and candidate qualification remain separate
-integration work; no dashboard or network response may assert release approval.
+expiry. The chain/recovery verifier and candidate qualification are joined to this
+boundary; no dashboard or network response may assert release approval.
 
 Installation never launches a process. `run` starts only the private operator
 service, with no keys or automatically authorized signer. Its default API listens
@@ -100,12 +108,11 @@ from a successful install.
 
 ## Managed signer protocol
 
-`internal/managed` is a library, not an HTTP signing endpoint. A future reviewed
-adapter must reconstruct operations from finalized chain data and independently
-verify exact release approval, artifact/configuration digests, code provenance,
-network identity, host policy and current membership. Dashboard booleans, saved
-JSON and a process-health check are not valid implementations of that adapter.
-There is currently no production adapter. Test adapters are confined to tests.
+`internal/managed` is used by the installed interactive host command, not an HTTP
+signing endpoint. Its development adapters reconstruct finalized operations and
+verify release approval, artifact/configuration digests, code provenance, network
+identity, host policy and membership. Caller-supplied readiness booleans cannot
+authorize signing. There is no enabled production signing adapter.
 
 The state transitions are:
 
@@ -409,18 +416,16 @@ caller lifecycle; this library callback is not an interruptible remote unlock AP
 
 ## Remaining acceptance work (must not be skipped)
 
-1. Implement reviewed live local-chain evidence/reconciliation adapters and wire
-   this narrow boundary into a complete managed command and transfer lifecycle.
-2. Join installed-artifact, candidate qualification and local approval checks;
-   exercise those checks at activation with real adapter outputs, not test flags.
-3. Run full install/observe/manual-unlock/activate/drain/stop/restart/replacement
-   with actual synthetic transfers and receipt reconciliation across two clean
-   development hosts. Current containers share one Docker host and do not prove
-   independent administration or an end-to-end cross-host replacement.
-4. Exercise boot-time service behavior, log retention and operational backups;
-   verify all exports and backup formats omit keys/passphrases.
-5. Re-run race/static/Linux checks after integration, publish sanitized evidence,
-   and keep every unresolved public deployment in observation-only mode.
+1. Repeat the complete install/observe/manual-unlock/activate/stop/crash/recovery/
+   replacement exercise on two clean development hosts with the same approved
+   artifact. The current laboratory uses one physical host.
+2. Exercise boot-time systemd behavior, bounded journal retention and encrypted
+   off-host backup/restore, including emergency access and evidence of actual
+   host controls. Synthetic reviewer records do not prove these controls.
+3. Verify logs, exports and backups on those hosts. The local known-secret scans
+   cover runtime trees and container output, not all persistence layers.
+4. Refresh reproducibility and target checks for the exact final artifacts before
+   independent-host acceptance. Keep public deployments observation-only.
 
 ## Runtime composition
 
@@ -438,9 +443,9 @@ finality. Token mappings must be unambiguous in both directions. Runtime changes
 require renewed review and explicit reconciliation; no implicit journal migration
 is performed.
 
-Composition compiles and passes negative configuration tests and managed race
-checks. The positive installed-runtime path, interactive command and real-node
-acceptance remain unverified. Do not treat successful preparation as activation.
+Composition passes negative configuration and race checks. The installed
+interactive path has also signed actual development-chain operations in both
+directions. Preparation alone still grants no signing authority.
 
 ## Interactive managed activation command
 
@@ -465,10 +470,9 @@ new invocation. No automatic signer restart is enabled.
 
 Linux tests drive the command-loop function with synthetic encrypted keys and
 verified fixture operations in both directions, then test cancellation with a
-blocked input pipe. These tests do not yet invoke the installed `activate` command
-against actual RPC nodes or a terminal. Complete installed positive activation,
-terminal signal restoration, host-loss recovery and independent-host acceptance
-remain outstanding.
+blocked input pipe. Separate installed-command exercises now cover actual RPC nodes, terminal
+unlock, crash recovery and fenced replacement in the single-host laboratory.
+Full two-host and boot-time service acceptance remain outstanding.
 
 ## Permission changes during transfer reads
 
