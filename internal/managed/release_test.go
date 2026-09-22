@@ -74,7 +74,23 @@ func installedFixture(t *testing.T) (*InstalledVerifier, Policy) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	v, e := NewInstalledVerifier(root, filepath.Join(root, "publishers.json"), config, &fixtureVerifier{edit: func(e *Evidence) { e.ReleaseApproved = false }})
+	// Independent signed validator release binds the member executable, not TAR.
+	vm := m
+	vm.Component = "validator"
+	vm.ID = "validator-fixture"
+	vm.Artifacts = []operator.ReleaseArtifact{{Platform: installation.Platform, SHA256: installation.Files["koinos-bridge-validator"], Size: uint64(len("approved fixture executable"))}}
+	vb, _ := operator.CanonicalRelease(vm)
+	vs := operator.SignedRelease{Manifest: vm, Signatures: []operator.ReleaseSignature{{Publisher: "synthetic", Signature: hex.EncodeToString(ed25519.Sign(priv, vb))}}}
+	vv, err := operator.VerifyRelease(vs, trust, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := operator.CandidateReport{SchemaVersion: 2, Scope: "isolated-observation-transfer-v2", ArtifactSHA256: installation.Files["koinos-bridge-validator"], State: "checks-passed", Checks: []string{"pinned-networks-and-both-direction-transfer-records", "observation-produced-zero-signatures", "signature-exchange-refused", "duplicate-process-excluded", "network-mismatch-pauses-and-recovers", "crash-restart-checkpoints-and-records-retained", "graceful-stop", "only-read-rpc-methods"}}
+	qualification := CandidateQualification{Schema: 1, ValidatorRelease: vs, Result: operator.CandidateResult{ReleaseDigest: vv.Digest, Platform: installation.Platform, ArtifactSHA256: report.ArtifactSHA256, CheckerSHA256: installation.Files["vortex-candidate-check"], StartedAt: now.Add(-20 * time.Second), FinishedAt: now.Add(-10 * time.Second), Report: report, Isolation: "local-docker-network-none-readonly-no-host-mounts-uid65532"}}
+	if e = host.Atomic(root, "candidate.json", qualification); e != nil {
+		t.Fatal(e)
+	}
+	v, e := NewInstalledVerifier(root, filepath.Join(root, "publishers.json"), config, filepath.Join(root, "candidate.json"), &fixtureVerifier{edit: func(e *Evidence) { e.ReleaseApproved = false }})
 	if e != nil {
 		t.Fatal(e)
 	}

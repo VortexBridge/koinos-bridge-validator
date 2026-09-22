@@ -21,19 +21,20 @@ type InstalledVerifier struct {
 	root       string
 	trust      string
 	config     string
+	candidate  string
 	executable string
 	chain      Verifier
 }
 
-func NewInstalledVerifier(root, trust, config string, chain Verifier) (*InstalledVerifier, error) {
-	if !filepath.IsAbs(root) || !filepath.IsAbs(trust) || !filepath.IsAbs(config) || chain == nil {
+func NewInstalledVerifier(root, trust, config, candidate string, chain Verifier) (*InstalledVerifier, error) {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(trust) || !filepath.IsAbs(config) || !filepath.IsAbs(candidate) || chain == nil {
 		return nil, errors.New("absolute local evidence paths and chain verifier required")
 	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, errors.New("running executable unavailable")
 	}
-	return &InstalledVerifier{root, trust, config, executable, chain}, nil
+	return &InstalledVerifier{root, trust, config, candidate, executable, chain}, nil
 }
 func fileDigest(path string, max int64) (string, error) {
 	raw, err := worker.ReadPrivateFile(path, max)
@@ -76,6 +77,10 @@ func (v *InstalledVerifier) Inspect(ctx context.Context, p Policy) (Evidence, er
 	if err != nil || config != p.ConfigSHA256 {
 		return Evidence{}, errors.New("configuration differs from signer policy")
 	}
+	candidateExpiry, err := checkCandidate(v.candidate, v.root, installation, trust, time.Now())
+	if err != nil {
+		return Evidence{}, err
+	}
 	e, err := v.chain.Inspect(ctx, p)
 	if err != nil || ctx.Err() != nil {
 		return Evidence{}, errors.New("live chain verification failed")
@@ -83,8 +88,11 @@ func (v *InstalledVerifier) Inspect(ctx context.Context, p Policy) (Evidence, er
 	// Local approval may expire during the chain query; cap the evidence lifetime.
 	now := time.Now()
 	releaseExpiry, parseErr := time.Parse(time.RFC3339, installation.Release.Manifest.ExpiresAt)
-	if parseErr != nil || !now.Before(releaseExpiry) || !now.Before(installation.Approval.WindowEnd) || now.Before(installation.Approval.WindowStart) {
+	if parseErr != nil || !now.Before(candidateExpiry) || !now.Before(releaseExpiry) || !now.Before(installation.Approval.WindowEnd) || now.Before(installation.Approval.WindowStart) {
 		return Evidence{}, errors.New("local approval expired during chain verification")
+	}
+	if e.ExpiresAt.After(candidateExpiry) {
+		e.ExpiresAt = candidateExpiry
 	}
 	if e.ExpiresAt.After(releaseExpiry) {
 		e.ExpiresAt = releaseExpiry

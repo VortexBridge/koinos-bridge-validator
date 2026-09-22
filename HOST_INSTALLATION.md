@@ -242,6 +242,34 @@ network/finality. Real-chain membership rotation and activation integration rema
 unverified. This adapter reports chain state only; it does not establish host
 security, candidate qualification, release approval or permission to sign.
 
+## Installed candidate qualification
+
+The installed verifier now requires an absolute path to private local
+`CandidateQualification` evidence in addition to publisher trust and configuration.
+The record contains schema version 1, the separately signed **validator** release,
+and the operator candidate runner's result. The installed TAR is an **operator**
+release; its archive hash must not be substituted for the tested executable hash.
+
+Verification requires the validator release to pass current publisher trust and
+expiry checks; its exact platform, executable hash and size must match the member
+of the authenticated installed bundle. The checker hash must match the bundled
+`vortex-candidate-check`. Only the current eight-check observation report and the
+specified isolated execution mode are accepted. Tests must finish after release
+creation and before local bundle activation approval. Qualification expiry also
+caps the resulting readiness lifetime.
+
+The record must be a private, bounded, owner-controlled local file. This is local
+execution evidence, **not** a publisher signature over the test result or remote
+host attestation. It must be produced from the actual isolated runner output;
+manual declarations cannot replace execution. A user able to rewrite all local
+approvals and trust files remains outside this boundary.
+
+Fourteen new negative cases cover missing/insecure evidence, mismatched binaries,
+checker/platform/release, unsigned manifests, incomplete reports and invalid
+ordering. The fixture uses synthetic signed releases. The CLI workflow that
+imports a real runner result into this installed record remains to be connected.
+Candidate observation checks do not prove managed signing or two-host recovery.
+
 ## Joined chain evidence
 
 `managed.NewChainVerifier` combines the EVM and Koinos finalized snapshots. Both

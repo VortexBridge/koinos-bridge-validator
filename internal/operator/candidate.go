@@ -267,6 +267,12 @@ func (s *Store) TestCandidate(ctx context.Context, digest, platform, checkerPath
 	return result, nil
 }
 
+// ValidateCandidateObservation accepts only the current complete observation
+// qualification report. It does not certify signing or authorize activation.
+func ValidateCandidateObservation(report CandidateReport, artifact string) error {
+	return validateCandidateReport(report, artifact)
+}
+
 func validateCandidateReport(report CandidateReport, artifact string) error {
 	expected := []string{"pinned-networks-and-both-direction-transfer-records", "observation-produced-zero-signatures", "signature-exchange-refused", "duplicate-process-excluded", "network-mismatch-pauses-and-recovers", "crash-restart-checkpoints-and-records-retained", "graceful-stop", "only-read-rpc-methods"}
 	if report.SchemaVersion != 2 || report.Scope != "isolated-observation-transfer-v2" || report.ArtifactSHA256 != artifact || report.State != "checks-passed" || report.Error != "" || len(report.Checks) != len(expected) {
