@@ -1,0 +1,23 @@
+# User service: install under ~/.config/systemd/user after reviewing the path.
+# Requires the bundle at ~/.local/share/vortex-host. Installation never enables it.
+[Unit]
+Description=Vortex private observation service
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/vortex-host --root %h/.local/share/vortex-host run
+UMask=0077
+NoNewPrivileges=yes
+LimitCORE=0
+LimitMEMLOCK=infinity
+Restart=no
+TimeoutStopSec=25
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=100
+
+[Install]
+WantedBy=default.target
