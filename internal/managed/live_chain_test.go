@@ -21,11 +21,11 @@ func TestIsolatedKoinosAcceptance(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	state, e := s.Read(context.Background(), "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC", nil)
+	state, e := s.Read(context.Background(), "1NCta26cGUPbtvmTpBmZkFwxCKwiWf5npw", nil)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if state.Height != 194 || state.Nonce != 2 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
+	if state.Height != 319 || state.Nonce != 4 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
 		t.Fatalf("unexpected development snapshot: %+v", state)
 	}
 	t.Logf("actual irreversible bridge snapshot height=%d members=%d nonce=%d paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
@@ -71,7 +71,7 @@ func TestIsolatedEVMTransferRead(t *testing.T) {
 	}
 	// The synthetic destination token is deployed and approved at Koinos height 132.
 	// Destination delivery is irreversible at height 194.
-	reader, e := NewEVMKoinosReader(source, snapshot, "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC", map[string]string{"0x5FbDB2315678afecb367f032d93F642f64180aa3": "162pT1wYEiKS9cXBbCsz6JHPFeGchtBdND"}, 86400000)
+	reader, e := NewEVMKoinosReader(source, snapshot, "1NCta26cGUPbtvmTpBmZkFwxCKwiWf5npw", map[string]string{"0x5FbDB2315678afecb367f032d93F642f64180aa3": "162pT1wYEiKS9cXBbCsz6JHPFeGchtBdND"}, 86400000)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -88,4 +88,45 @@ func TestIsolatedEVMTransferRead(t *testing.T) {
 		t.Fatal(e)
 	}
 	t.Logf("actual transfer reconstructed amount=%s completed=%t digest=%s", got.Transfer.Amount, got.Completed, digest)
+}
+
+// Rotation was executed by the other two synthetic validators on both chains.
+// This check reads finalized state and proves the former identities are excluded.
+func TestIsolatedRetiredIdentities(t *testing.T) {
+	if !*liveEVMAcceptance || !*liveKoinosAcceptance {
+		t.Skip("both isolated chains required")
+	}
+	evm, err := NewEVMSnapshot(operator.Binding{Profile: isolatedEVMProfile(), RPC: "http://127.0.0.1:18083"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	koinos, err := NewKoinosSnapshot(operator.Binding{Profile: isolatedKoinosProfile(), RPC: "http://127.0.0.1:18081"}, "http://127.0.0.1:18082")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := NewChainVerifier(evm, koinos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := policy()
+	p.EVMAddress = "0xDb8a142b2e6DBf5Fb31138a2e5038fb0C9a38E38"
+	p.KoinosAddress = "1NCta26cGUPbtvmTpBmZkFwxCKwiWf5npw"
+	p.PreviousEVM = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+	p.PreviousKoinos = "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC"
+	evidence, err := verifier.Inspect(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !evidence.RotationFinal || !evidence.MembershipFinal {
+		t.Fatal("rotation not final")
+	}
+	old := p
+	old.EVMAddress = p.PreviousEVM
+	old.KoinosAddress = p.PreviousKoinos
+	old.PreviousEVM = ""
+	old.PreviousKoinos = ""
+	if _, err = verifier.Inspect(context.Background(), old); err == nil {
+		t.Fatal("retired signer accepted")
+	}
+	t.Log("actual finalized membership accepts replacement and rejects retired signer")
 }

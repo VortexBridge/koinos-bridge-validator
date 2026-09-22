@@ -636,3 +636,31 @@ Automated coverage includes partial retirement, retirement changing during
 import, invalid signatures, changed operations, completion regression, checkpoint
 failure and refusing a second import. Installed-artifact acceptance of this new
 command and full independently hosted replacement remain outstanding.
+
+## Installed retired-key recovery acceptance (development laboratory)
+
+The clean-source `d3be5df` Linux ARM64 bundle was built twice with identical SHA256
+`595e1786bb2f96303d6f075e235621113fe80e4c184516a07e96b52475d27a7c`.
+Its actual isolated checker passed before a fresh synthetic local release approval.
+A third container with another synthetic machine identity installed that bundle.
+
+An active old signer journal contained one completed transfer and one newly
+signed pending transfer. After preserving its encrypted backup, the entire old
+runtime container was killed. The replacement uses new EVM and Koinos identities.
+Installed `recover-retired` rejected attempts before rotation, after EVM-only
+rotation and before finalized Koinos rotation/replica agreement. Once both prior
+identities were retired and the replacement enrolled, it imported two public
+operations while leaving the vault locked. Interactive activation then signed
+the pending operation with the replacement identity.
+
+Koinos rejected delivery using the retired signature plus a current validator
+(`is not a validator`). The installed replacement and second validator signatures
+completed delivery at block 319. After finality and replica agreement, restarting
+the replacement reconciled completion and retained its own signature. Both
+signing processes were then stopped. Actual snapshot/transfer/rotation reader
+checks passed; the retired policy was rejected against finalized memberships.
+
+These containers share one physical Docker host and synthetic control reviews.
+This proves the installed recovery path on actual development chains, not two
+independently administered hosts or complete secrecy/backup acceptance. Reverse
+route and independent-host lifecycle exercises remain required.
