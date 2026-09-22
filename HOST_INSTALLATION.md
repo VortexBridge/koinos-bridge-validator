@@ -147,8 +147,20 @@ the destination Koinos codec cannot distinguish their operation index. Recovery
 checks every retained operation, rejects changed payloads or a completed-to-pending
 regression, and binds the new checkpoint to the receipts it checked.
 
-The reader interface still requires concrete chain adapters. Current reader tests
-use synthetic receipt observations, not live chain proofs. The vectors verify
+`KoinosEVMReader` now implements the Koinos-to-EVM receipt adapter using standard
+read-only RPC methods. A locator supplies only a block-height hint: the reader
+checks network identity, the reported last irreversible height, a block fetched
+on the reported ancestor branch, header hash, receipt/block identity, unique
+transaction and event, successful execution, emitter, token mapping and route.
+Destination code and completion status are read at the same finalized EVM block
+hash with `requireCanonical`. The completion key matches an independent ethers
+calculation. Endpoints are trusted read providers, not light-client proofs.
+
+HTTP fixture tests exercise the actual request/response parsing, including
+negative source and destination cases. No public RPC or real chain execution is
+claimed by those tests. Historical receipt finality does **not** establish Koinos
+code provenance or current validator membership. The EVM-to-Koinos reader and
+irreversible Koinos state adapter remain outstanding. The vectors verify
 encoding agreement, not complete contract execution or public deployment safety.
 Reproduce them from this repository using:
 
