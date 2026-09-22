@@ -469,3 +469,17 @@ blocked input pipe. These tests do not yet invoke the installed `activate` comma
 against actual RPC nodes or a terminal. Complete installed positive activation,
 terminal signal restoration, host-loss recovery and independent-host acceptance
 remain outstanding.
+
+## Permission changes during transfer reads
+
+Each signing request rechecks live readiness after reconstructing the transfer,
+before either returning a previously stored signature or creating a new one. A
+new signature requires another readiness check after durable intent persistence.
+Changed approval, membership, host readiness or expiry locks the session. A failed
+last check leaves an unsigned pending intent for later reconciliation.
+
+Nine Linux synthetic-vault cases cover revocation during receipt reconstruction
+for both new and retained signatures, plus final-permit failure after intent
+persistence. This is a local freshness boundary, not an atomic guarantee against
+later chain changes; destination contracts still enforce current authority when a
+transfer is submitted. Full real-chain acceptance remains outstanding.

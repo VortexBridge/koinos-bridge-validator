@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
 	"os"
 	"os/exec"
@@ -352,5 +353,97 @@ func TestLinuxBidirectionalTypedSigningAndRecovery(t *testing.T) {
 	op, e := recovered.Sign(context.Background(), ids[0])
 	if e != nil || op.State != "completed" {
 		t.Fatal("completion not reconciled", e)
+	}
+}
+
+type revokeDuringOperation struct {
+	fixtureVerifier
+	revoke func(*Evidence)
+}
+
+func (v *revokeDuringOperation) Operation(ctx context.Context, p Policy, id string) (Operation, error) {
+	op, e := v.fixtureVerifier.Operation(ctx, p, id)
+	if v.revoke != nil {
+		v.fixtureVerifier.edit = v.revoke
+	}
+	return op, e
+}
+func TestLinuxRevocationDuringReceiptReadBlocksNewAndRetainedSignatures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("non-root Linux required")
+	}
+	for _, retained := range []bool{false, true} {
+		for _, gate := range []string{"approval", "membership", "host", "expiry"} {
+			t.Run(fmt.Sprintf("%s/retained=%t", gate, retained), func(t *testing.T) {
+				root := dir(t)
+				t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "user-config"))
+				vault, p := makeVault(t, root)
+				v := &revokeDuringOperation{fixtureVerifier: fixtureVerifier{operation: operation("transfer-1")}}
+				s, e := Open(filepath.Join(root, "session"), p, v)
+				if e != nil {
+					t.Fatal(e)
+				}
+				defer s.Close()
+				if e = s.Activate(context.Background(), vault, password); e != nil {
+					t.Fatal(e)
+				}
+				if retained {
+					if _, e = s.Sign(context.Background(), "transfer-1"); e != nil {
+						t.Fatal(e)
+					}
+				}
+				v.revoke = func(e *Evidence) {
+					switch gate {
+					case "approval":
+						e.ReleaseApproved = false
+					case "membership":
+						e.MembershipFinal = false
+					case "host":
+						e.HostSecure = false
+					case "expiry":
+						e.ExpiresAt = time.Now().Add(-time.Second)
+					}
+				}
+				op, e := s.Sign(context.Background(), "transfer-1")
+				if e == nil || op.Signature != "" || s.keys != nil || s.journal.State != "locked" {
+					t.Fatal("changed permit allowed signature disclosure or retained active keys")
+				}
+				if !retained && len(s.journal.Operations) != 0 {
+					t.Fatal("revoked operation created signed intent")
+				}
+			})
+		}
+	}
+}
+
+func TestLinuxFinalPermitFailurePreservesOnlyUnsignedIntent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("non-root Linux required")
+	}
+	root := dir(t)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "user-config"))
+	vault, p := makeVault(t, root)
+	v := &revokeDuringOperation{fixtureVerifier: fixtureVerifier{operation: operation("transfer-1")}}
+	s, e := Open(filepath.Join(root, "session"), p, v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	if e = s.Activate(context.Background(), vault, password); e != nil {
+		t.Fatal(e)
+	}
+	checks := 0
+	v.revoke = func(e *Evidence) {
+		checks++
+		if checks >= 2 {
+			e.ReleaseApproved = false
+		}
+	}
+	if _, e = s.Sign(context.Background(), "transfer-1"); e == nil {
+		t.Fatal("expired final permit signed")
+	}
+	intent, ok := s.journal.Operations["transfer-1"]
+	if !ok || intent.State != "pending" || intent.Signature != "" || s.keys != nil {
+		t.Fatal("failed final check did not preserve only unsigned intent")
 	}
 }

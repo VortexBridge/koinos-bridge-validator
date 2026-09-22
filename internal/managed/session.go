@@ -273,6 +273,12 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 	if err != nil || op.ID != id || !validHash(op.Digest) || (op.Family != "evm" && op.Family != "koinos") || op.Signature != "" || (op.State != "pending" && op.State != "completed") {
 		return Operation{}, errors.New("operation is not independently verified")
 	}
+	// Receipt reconstruction can outlive approval or membership. Recheck before
+	// either returning a retained signature or preparing a new one.
+	if err = s.check(ctx); err != nil {
+		s.lock()
+		return Operation{}, err
+	}
 	if old, ok := s.journal.Operations[id]; ok {
 		if old.Digest != op.Digest || old.Family != op.Family {
 			s.lock()
@@ -303,6 +309,12 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 	}
 	s.journal.Operations[id] = op
 	if err = s.save(); err != nil {
+		s.lock()
+		return Operation{}, err
+	}
+	// Durable intent must precede signing, but slow persistence must not extend
+	// a permit. A failed final check leaves an unsigned recoverable intent.
+	if err = s.check(ctx); err != nil {
 		s.lock()
 		return Operation{}, err
 	}
