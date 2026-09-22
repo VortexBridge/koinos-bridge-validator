@@ -778,3 +778,24 @@ This is not a production reviewer/publisher rotation procedure. Machine, boot,
 user, configuration bytes, signing identities and encrypted vault were retained.
 The runtime still shares the single physical laboratory host; independent-host
 acceptance and a new reverse transfer signed by two installed runtimes remain.
+
+## Two installed validators complete the reverse route
+
+A new synthetic Koinos transfer at irreversible block 444, event 3 was read and
+signed independently by installed validators two and three after manual unlock.
+The second validator used the upgraded 0.3.1 bundle; the third used its qualified
+0.3.0 bundle with mutable receipt hints. Both reconstructed digest
+`d55874027e88de997abd1732026d2fe35cbdd4ca26f2a7b2c61b28aae4f85a38`.
+No fixture helper produced either signature for this delivery.
+
+EVM `callStatic` rejected one signature. The actual delivery with both installed
+signatures succeeded at block 12, releasing exactly one development ETH and
+reducing bridge escrow to zero. The second runtime reconciled completion while
+active; the third reconciled it after stop and manual restart. Both retained
+their original signatures and were stopped afterwards. All five actual-chain
+reader checks passed at Koinos irreversible height 444.
+
+This closes the helper-signature limitation for the local reverse-route test.
+It does not establish independently administered machines or general mixed
+version compatibility; only these exact artifact hashes and operation were
+exercised in the single physical laboratory.

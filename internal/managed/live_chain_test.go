@@ -25,7 +25,7 @@ func TestIsolatedKoinosAcceptance(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if state.Height != 383 || state.Nonce != 4 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
+	if state.Height != 444 || state.Nonce != 4 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
 		t.Fatalf("unexpected development snapshot: %+v", state)
 	}
 	t.Logf("actual irreversible bridge snapshot height=%d members=%d nonce=%d paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
@@ -137,8 +137,8 @@ func TestIsolatedReverseTransferRead(t *testing.T) {
 	}
 	source := operator.Binding{Profile: isolatedKoinosProfile(), RPC: "http://127.0.0.1:18081"}
 	destination := operator.Binding{Profile: isolatedEVMProfile(), RPC: "http://127.0.0.1:18083"}
-	const id = "12208733ff19f9521ff2ea7f99faa329a9cf4ff441e55d22935200ebcc04f9d14a27:3"
-	height := uint64(382)
+	const id = "12201d108ad6b2b792554049b7fda2f9cbd62158414f6b54f5ca35ce2ea61f9b7ec8:3"
+	height := uint64(443)
 	reader, err := NewKoinosEVMReader(source, destination, map[string]string{"162pT1wYEiKS9cXBbCsz6JHPFeGchtBdND": "0x5FbDB2315678afecb367f032d93F642f64180aa3"}, 86400000, func(context.Context, string) (uint64, error) { return height, nil })
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestIsolatedReverseTransferRead(t *testing.T) {
 	if _, err = reader.ReadTransfer(context.Background(), id); err == nil {
 		t.Fatal("wrong mutable block hint accepted")
 	}
-	height = 383
+	height = 444
 	got, err := reader.ReadTransfer(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
