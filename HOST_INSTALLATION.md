@@ -756,3 +756,25 @@ Automated tests cover signature retention/reopen, completion, altered config,
 instance, identities and retirement policy, active signer refusal, wrong host,
 tampered prior review, missing or revoked approval, changed operation digest and
 checkpoint failure. Installed old-to-new package acceptance remains pending.
+
+## Installed same-host upgrade acceptance
+
+The existing second synthetic validator upgraded from the 0.3.0 bundle
+`fb9db50e…f21120` to qualified 0.3.1 / sequence 2 bundle
+`379f547b5f94a1e5af479646f1dda3af0c41b6e802a737ca99c31ab1cbd42944`
+(source `6e9e010`). The old installed host command performed installation twice;
+the new installed `upgrade-state` ran twice. Both retained operations and their
+exact public signatures survived, and the vault remained locked throughout.
+
+The new executable then manually unlocked, activated against both actual chains
+and returned the existing completed operation with its identical pre-upgrade
+signature. After stopping, activation using the retained old executable failed
+before password input because the journal no longer matched its policy.
+
+Fixture scope: the laboratory generated a fresh synthetic reviewer and renewed
+the old-artifact review before installation, then used that same reviewer for the
+new review. The fixture also enrolled a fresh synthetic publisher trust record.
+This is not a production reviewer/publisher rotation procedure. Machine, boot,
+user, configuration bytes, signing identities and encrypted vault were retained.
+The runtime still shares the single physical laboratory host; independent-host
+acceptance and a new reverse transfer signed by two installed runtimes remain.
