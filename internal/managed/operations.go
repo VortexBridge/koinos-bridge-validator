@@ -80,7 +80,11 @@ func (v *OperationVerifier) Operation(ctx context.Context, p Policy, id string) 
 	return op, err
 }
 func (v *OperationVerifier) Reconcile(ctx context.Context, p Policy, j Journal) (string, error) {
-	checkpoint, e := v.base.Reconcile(ctx, p, j)
+	// This layer owns complete retained-operation verification below. The base
+	// certifies only the route/chain anchor, never unexamined operation records.
+	anchorJournal := clone(j)
+	anchorJournal.Operations = nil
+	checkpoint, e := v.base.Reconcile(ctx, p, anchorJournal)
 	if e != nil || !validHash(checkpoint) {
 		return "", errors.New("source checkpoints are not reconciled")
 	}

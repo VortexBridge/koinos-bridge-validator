@@ -242,6 +242,30 @@ network/finality. Real-chain membership rotation and activation integration rema
 unverified. This adapter reports chain state only; it does not establish host
 security, candidate qualification, release approval or permission to sign.
 
+## Joined chain evidence
+
+`managed.NewChainVerifier` combines the EVM and Koinos finalized snapshots. Both
+new identities must be current members, both bridges must be unpaused, and the
+profile/code hashes and observation times must match. A replacement requires two
+new identities and final retirement of both previous identities; a missing EVM
+retirement probe is a failure, not evidence of removal.
+
+The current activation adapter supports EVM development network `31337` only and
+rejects known public Koinos mainnet/Harbinger identities even when relabeled local.
+The existing codec vectors can still describe public network identities for pure
+encoding tests; those vectors do not grant activation permission.
+
+Chain evidence deliberately leaves host and release readiness false. It cannot
+activate a session by itself, and its base operation method refuses untyped
+requests. Use the typed operation verifier for recovery: the base checks the chain
+anchor while the wrapper rechecks every retained transfer before returning a
+combined checkpoint. A direct base reconciliation with retained operations fails.
+
+Tests cover 14 joined-state scenarios, four relabeled public identities, and
+retained-transfer reconciliation through the joined verifier. Snapshot outputs
+are substituted in these composition tests; separate suites exercise RPC parsing.
+No complete installed activation, actual rotation or two-host recovery is claimed.
+
 ## Replacement and fencing
 
 A same-host stop is enforced by process/data locks and key disposal. These locks
