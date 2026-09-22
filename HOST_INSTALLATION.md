@@ -524,7 +524,7 @@ the tested node build uses koinos-proto 2.6.0. Old 1.0.0 descriptors do not suff
 
 `TestIsolatedKoinosAcceptance` is opt-in with `-isolated-koinos-acceptance` and
 expects the documented Prompt 03 synthetic chain, bridge and irreversible height
-68. It reads live RPC at `127.0.0.1:18081` and replica RPC at `127.0.0.1:18082`.
+132 (the token-approval checkpoint). It reads live RPC at `127.0.0.1:18081` and replica RPC at `127.0.0.1:18082`.
 In the isolated Docker laboratory, same-container loopback forwarders connect
 those ports to the separate live/replica JSON-RPC services on the internal network.
 This preserves the endpoint policy; ordinary HTTP remote endpoints remain rejected.
@@ -545,6 +545,6 @@ With both isolated-chain flags, `TestIsolatedEVMTransferRead` reads the fixed
 synthetic deposit recorded in the Prompt 03 evidence. One mock WETH is escrowed
 on Ethereum and reconstructed as 100,000,000 bridge units (8 decimals), with
 zero relayer payment. The reader also queries irreversible Koinos completion
-status and reconstructs the destination digest. The destination token address
-is reserved for the synthetic fixture; this check does not prove token deployment,
-bridge support, signature issuance or completed delivery on Koinos.
+status and reconstructs the destination digest. The synthetic destination token was deployed and approved separately at the
+height-132 checkpoint. This reader check does not independently enforce token
+support or prove signature issuance or completed delivery on Koinos.
