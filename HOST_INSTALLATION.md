@@ -342,6 +342,37 @@ The Linux tests demonstrate this policy using a synthetic membership transition,
 including an old session still running when replacement is attempted. They do
 not establish on-chain rotation finality or independent-host control.
 
+## Authenticated host review and live process protection
+
+`managed.NewHostVerifier` combines a separately pinned Ed25519 reviewer public key,
+a signed host review and private local control records with live Linux process
+protection. The review binds the instance, executable/configuration digests and a
+hash of the Linux machine ID, boot ID and service UID. Its initial development
+validity limit is 24 hours; reboot, expiry or changed configuration requires a new
+review. This conservative implementation limit is not evidence of operator
+acceptance or production enrollment.
+
+The standard profile requires evidence for patched service setup, administrative
+access/firewall, private management, encrypted storage/vault, hibernation and
+hypervisor policy, patch response, monitoring, log retention, off-host backup and
+restore, release maintenance and emergency access. The restricted profile also
+requires overlay grants and device posture evidence. Every record is a bounded
+private `<control>.txt` file whose digest is covered by the reviewer signature.
+The raw 32-byte reviewer public key is also locally pinned in a private file.
+
+These records require actual human inspection. A signature authenticates the
+review and its contents; it does not remotely attest disk encryption, firewall
+rules, hypervisor behavior or independence of administrators. The software checks
+record integrity and separately enforces non-root operation, no swap or whole
+process memory locking, zero core limits and a non-dumpable process. Root or a
+hypervisor can subvert local identity and memory; this is not hardware attestation.
+
+Fifteen validation scenarios reject changed, incomplete, stale or unauthenticated
+reviews. Linux integration applies real memory/core protections with synthetic
+host/reviewer evidence. CLI review issuance, actual host review, policy enrollment
+and complete installed activation remain outstanding. The wrapper grants no
+release approval and cannot replace finalized chain membership checks.
+
 ## One managed session for both directions
 
 `managed.NewBidirectionalVerifier` connects both typed transfer readers to the
