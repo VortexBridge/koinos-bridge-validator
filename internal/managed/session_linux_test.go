@@ -290,3 +290,67 @@ func TestLinuxManualEntryHasFreshPostUnlockChecks(t *testing.T) {
 		})
 	}
 }
+
+func TestLinuxBidirectionalTypedSigningAndRecovery(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("non-root Linux required")
+	}
+	root := dir(t)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "user-config"))
+	vault, p := makeVault(t, root)
+	v, forward, reverse, _ := routeFixture(t)
+	path := filepath.Join(root, "session")
+	s, e := Open(path, p, v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Activate(context.Background(), vault, password); e != nil {
+		t.Fatal(e)
+	}
+	ids := []string{EVMToKoinos + "/" + forward.observation.ID, KoinosToEVM + "/" + reverse.observation.ID}
+	signed := map[string]Operation{}
+	for _, id := range ids {
+		op, e := s.Sign(context.Background(), id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if op.Family == "evm" {
+			if signer(t, op) != p.EVMAddress {
+				t.Fatal("wrong EVM signer")
+			}
+		} else {
+			signature, _ := hex.DecodeString(op.Signature)
+			digest, _ := hex.DecodeString(op.Digest)
+			recovered, e := util.RecoverKoinosAddressFromSignature(base64.URLEncoding.EncodeToString(signature), digest)
+			if e != nil || recovered != p.KoinosAddress {
+				t.Fatal("wrong Koinos signer", e)
+			}
+		}
+		signed[id] = op
+	}
+	if len(s.journal.Operations) != 2 {
+		t.Fatal("colliding transaction IDs overwrote journal")
+	}
+	if e = s.Close(); e != nil {
+		t.Fatal(e)
+	}
+	recovered, e := Open(path, p, v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer recovered.Close()
+	if e = recovered.Activate(context.Background(), vault, password); e != nil {
+		t.Fatal(e)
+	}
+	for _, id := range ids {
+		op, e := recovered.Sign(context.Background(), id)
+		if e != nil || op.Signature != signed[id].Signature {
+			t.Fatal("signature not preserved after recovery", e)
+		}
+	}
+	forward.observation.Completed = true
+	op, e := recovered.Sign(context.Background(), ids[0])
+	if e != nil || op.State != "completed" {
+		t.Fatal("completion not reconciled", e)
+	}
+}

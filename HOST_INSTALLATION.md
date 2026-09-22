@@ -313,6 +313,25 @@ The Linux tests demonstrate this policy using a synthetic membership transition,
 including an old session still running when replacement is attempted. They do
 not establish on-chain rotation finality or independent-host control.
 
+## One managed session for both directions
+
+`managed.NewBidirectionalVerifier` connects both typed transfer readers to the
+same signer session. Operation identifiers include `evm-to-koinos/` or
+`koinos-to-evm/` followed by the canonical transaction and operation identifier.
+The prefix belongs to local routing/journaling; destination contract digests are
+unchanged. Identical transaction identifiers on different chains remain separate.
+
+Recovery validates every journal entry's direction, record ID and signing family,
+then reconciles both route partitions before producing a combined checkpoint.
+Failure on either side blocks recovery. Legacy unqualified journals are rejected;
+there is no implicit rewrite that guesses the source chain.
+
+Synthetic Linux acceptance covers encrypted-vault signatures in both directions,
+public-key recovery, colliding transaction identifiers, close/reopen, identical
+retained signatures after recovery, and completion on one side. Route/receipt
+inputs are fixtures in this exercise. It is not real-chain execution or a lost-host
+replacement test, and the complete installed command remains unwired.
+
 ## Manual unlock timing and fresh recovery checks
 
 Managed activation uses separately bounded live checks before and after secret
