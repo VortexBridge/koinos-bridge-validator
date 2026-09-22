@@ -32,6 +32,7 @@ func read(path string, v interface{}) error {
 func run() error {
 	f := flag.NewFlagSet("vortex-host", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	hostProfile := f.String("host-profile", "standard", "host review profile")
 	config := f.String("config", "", "private managed runtime configuration")
 	root := f.String("root", "", "private installation directory")
 	instance := f.String("instance", "", "local installation identity")
@@ -42,7 +43,7 @@ func run() error {
 	candidateResult := f.String("candidate-result", "", "private isolated runner result")
 	approval := f.String("approval", "", "local approval record")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor, authorize, qualify, activate or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize, qualify, review-request, activate or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -91,6 +92,16 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"candidateQualified": true, "managedSigning": false, "notice": "Exact installed validator and checker qualified from local observation evidence; host, chain, custody and recovery gates still required."})
+	}
+	if f.Arg(0) == "review-request" {
+		var t operator.ReleaseTrust
+		if e := read(*trust, &t); e != nil {
+			return e
+		}
+		if _, e := managed.CreateHostReviewRequest(*root, *config, t, *hostProfile, time.Now()); e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"reviewRequested": true, "approved": false, "managedSigning": false, "notice": "Unsigned private host-review-request.json prepared; independent control review and signature still required."})
 	}
 	lease, e := worker.Acquire(*root, "host.lock")
 	if e != nil {

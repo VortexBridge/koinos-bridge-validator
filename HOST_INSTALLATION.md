@@ -483,3 +483,30 @@ for both new and retained signatures, plus final-permit failure after intent
 persistence. This is a local freshness boundary, not an atomic guarantee against
 later chain changes; destination contracts still enforce current authority when a
 transfer is submitted. Full real-chain acceptance remains outstanding.
+
+## Prepare a host review request
+
+After creating the private control records, invoke the exact installed host tool:
+
+```sh
+/absolute/private/installation/releases/BUNDLE_HASH/vortex-host \
+  --root /absolute/private/installation \
+  --config /absolute/private/runtime.json \
+  --trust /absolute/private/publishers.json \
+  --host-profile standard review-request
+```
+
+This holds the installation lock and verifies the current installed release,
+then writes private `host-review-request.json`. It contains the review body and
+`canonicalHex`, the exact canonical bytes to be independently inspected and signed.
+It contains no signature and cannot be used as `SignedHostReview`. Missing records
+are errors; the command does not generate success declarations. Keep the request
+and actual host binding private, outside repository evidence.
+
+The reviewer must inspect the control records and matching review body before
+signing. After verification, the separate signed review uses only `review` and
+`signature` fields; its public key must match the locally pinned reviewer key.
+Preparing or signing this review is not operator enrollment, release approval or
+permission to bypass chain checks. End-to-end Linux command/reviewer/activation
+acceptance remains outstanding; current tests cover canonical payload binding,
+unsigned-request rejection and missing evidence.
