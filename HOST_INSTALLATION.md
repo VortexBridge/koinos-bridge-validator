@@ -524,7 +524,7 @@ the tested node build uses koinos-proto 2.6.0. Old 1.0.0 descriptors do not suff
 
 `TestIsolatedKoinosAcceptance` is opt-in with `-isolated-koinos-acceptance` and
 expects the documented Prompt 03 synthetic chain, bridge and irreversible height
-132 (the token-approval checkpoint). It reads live RPC at `127.0.0.1:18081` and replica RPC at `127.0.0.1:18082`.
+194 (the delivery checkpoint). It reads live RPC at `127.0.0.1:18081` and replica RPC at `127.0.0.1:18082`.
 In the isolated Docker laboratory, same-container loopback forwarders connect
 those ports to the separate live/replica JSON-RPC services on the internal network.
 This preserves the endpoint policy; ordinary HTTP remote endpoints remain rejected.
@@ -581,3 +581,23 @@ koilib recovery identified the expected Koinos signer from that public signature
 This proves one installed-container activation/sign/stop/restart path. It does
 not prove host-loss recovery, two independent hosts, production host controls,
 secret-free backup/restore, destination execution or fenced replacement.
+
+### Actual two-validator delivery in one development laboratory
+
+Two separately installed synthetic validators with distinct EVM/Koinos identities
+have manually unlocked and signed the same actual pending deposit. The destination
+bridge rejected one signature and accepted both, delivering 100,000,000 units to
+the intended recipient. At Koinos live height 254, delivery block 194 is
+irreversible and the pinned replica matches its ID/state root. The actual reader
+reports completion. Restarting the first installed signer reconciled its retained
+operation to `completed`; the command returned its existing signature and generated
+no new signature. Both signing processes are stopped.
+
+Submission used the pinned bridge.proto, because the historical scripts' ABI
+contains obsolete complete-transfer field numbers. The separate protobufjs
+preimage check also omits default-zero fields to match the reviewed contract and
+Go protobuf serialization. Neither correction changes the reviewed bridge Wasm.
+
+Both containers share the same physical Docker host and synthetic host controls.
+This is transfer/lifecycle evidence, not independent operators, host-loss recovery
+or fenced replacement acceptance.

@@ -25,7 +25,7 @@ func TestIsolatedKoinosAcceptance(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if state.Height != 132 || state.Nonce != 2 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
+	if state.Height != 194 || state.Nonce != 2 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
 		t.Fatalf("unexpected development snapshot: %+v", state)
 	}
 	t.Logf("actual irreversible bridge snapshot height=%d members=%d nonce=%d paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
@@ -70,7 +70,7 @@ func TestIsolatedEVMTransferRead(t *testing.T) {
 		t.Fatal(e)
 	}
 	// The synthetic destination token is deployed and approved at Koinos height 132.
-	// Destination execution remains a separate acceptance step.
+	// Destination delivery is irreversible at height 194.
 	reader, e := NewEVMKoinosReader(source, snapshot, "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC", map[string]string{"0x5FbDB2315678afecb367f032d93F642f64180aa3": "162pT1wYEiKS9cXBbCsz6JHPFeGchtBdND"}, 86400000)
 	if e != nil {
 		t.Fatal(e)
@@ -80,7 +80,7 @@ func TestIsolatedEVMTransferRead(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if got.Completed || got.BridgeEventsInTransaction != 1 || got.Transfer.Amount != "100000000" || got.Transfer.Payment != "0" || got.Transfer.Metadata != "prompt03 isolated transfer" || got.Transfer.Recipient != "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC" {
+	if !got.Completed || got.BridgeEventsInTransaction != 1 || got.Transfer.Amount != "100000000" || got.Transfer.Payment != "0" || got.Transfer.Metadata != "prompt03 isolated transfer" || got.Transfer.Recipient != "1CAtc7wPVn9JUAcbV8jo8UfyzMoAHRaTPC" {
 		t.Fatalf("wrong actual transfer observation: %+v", got)
 	}
 	digest, e := TransferDigest(destination, got.Transfer)
