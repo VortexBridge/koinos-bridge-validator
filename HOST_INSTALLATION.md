@@ -601,3 +601,38 @@ Go protobuf serialization. Neither correction changes the reviewed bridge Wasm.
 Both containers share the same physical Docker host and synthetic host controls.
 This is transfer/lifecycle evidence, not independent operators, host-loss recovery
 or fenced replacement acceptance.
+
+## Retired-identity journal migration
+
+`vortex-host recover-retired` now provides a locked migration path when a lost
+host is replaced with new identities on both chains. This closes a gap in which
+`Open` correctly rejected the old policy digest but no supported import path
+existed. It does not authorize reusing the old keys on a second host.
+
+Preserve the original backup and its exact `managed.Policy` JSON (public identity,
+instance and artifact/configuration hashes). Prepare a fresh replacement
+installation, candidate qualification, local release approval, configuration and
+host review. Set `previousEvm` and `previousKoinos` to the retired identities and
+use a new encrypted vault. Never remove a live journal to force import.
+
+Pass absolute private paths before the command:
+
+```sh
+vortex-host --root /private/replacement --config /private/replacement/runtime.json \
+  --trust /private/replacement/trust.json \
+  --previous-policy /private/backup/policy.json \
+  --previous-journal /private/backup/session.json recover-retired
+```
+
+The command holds the installation lock, accepts only a fresh locked session,
+checks source policy integrity and retained signatures, verifies finalized
+retirement of both identities, rereads every operation and reconciles the new
+checkpoint. Changed digests and completed-to-pending regressions are rejected.
+Old signatures are excluded from the replacement journal; the original backup
+is untouched. A final live check precedes persistence. No vault password is
+requested. Subsequent interactive activation repeats all gates and reconciliation.
+
+Automated coverage includes partial retirement, retirement changing during
+import, invalid signatures, changed operations, completion regression, checkpoint
+failure and refusing a second import. Installed-artifact acceptance of this new
+command and full independently hosted replacement remain outstanding.

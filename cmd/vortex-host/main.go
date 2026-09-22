@@ -42,8 +42,10 @@ func run() error {
 	validatorRelease := f.String("validator-release", "", "signed validator executable release")
 	candidateResult := f.String("candidate-result", "", "private isolated runner result")
 	approval := f.String("approval", "", "local approval record")
+	previousPolicy := f.String("previous-policy", "", "private public-identity policy for the retired signer")
+	previousJournal := f.String("previous-journal", "", "private journal backup for the retired signer")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor, authorize, qualify, review-request, activate or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize, qualify, review-request, recover-retired, activate or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -131,6 +133,33 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(i)
+	case "recover-retired":
+		var previous managed.Policy
+		var source managed.Journal
+		if !filepath.IsAbs(*previousPolicy) || !filepath.IsAbs(*previousJournal) {
+			return errors.New("absolute private recovery input paths required")
+		}
+		if e = read(*previousPolicy, &previous); e != nil {
+			return e
+		}
+		raw, e := worker.ReadPrivateFile(*previousJournal, 4<<20)
+		if e != nil {
+			return e
+		}
+		if e = host.JSON(raw, &source); e != nil {
+			return e
+		}
+		session, _, e := managed.PrepareRuntime(*root, *config, *trust)
+		if e != nil {
+			return e
+		}
+		defer session.Close()
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		if e = session.ImportRetiredJournal(ctx, previous, source); e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"recoveredOperations": len(session.Status().Operations), "managedSigning": false, "notice": "Public operations reconciled after retirement of both previous identities. Vault remains locked; activation repeats live checks."})
 	case "activate":
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer cancel()
