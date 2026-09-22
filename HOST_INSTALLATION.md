@@ -531,3 +531,12 @@ This preserves the endpoint policy; ordinary HTTP remote endpoints remain reject
 The test performs no mutations and uses no keys. It intentionally fails if the
 fixture's chain, code, membership or height changes. It is actual reader coverage,
 not evidence of independent hosts or a completed managed signer lifecycle.
+
+The companion `TestIsolatedEVMAcceptance` opt-in check uses
+`-isolated-evm-acceptance` and a loopback forwarder at `127.0.0.1:18083`. It
+verifies the fixed Prompt 03 reviewed EVM deployment, current membership and
+finalized code/state through the actual managed reader. The laboratory runs
+Hardhat 2.22.6 / EDR 0.4.1 with network ID 31337, no public ports and no forks.
+Its finalized tag is a local development-node behavior, not public consensus.
+The reviewed runtime is 27,908 bytes; this lab explicitly permits oversized
+contracts. This does not establish deployability under the public EVM size limit.

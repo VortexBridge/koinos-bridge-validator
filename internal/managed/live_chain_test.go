@@ -30,3 +30,24 @@ func TestIsolatedKoinosAcceptance(t *testing.T) {
 	}
 	t.Logf("actual irreversible bridge snapshot height=%d members=%d nonce=%d paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
 }
+
+var liveEVMAcceptance = flag.Bool("isolated-evm-acceptance", false, "read the explicitly configured Prompt 03 isolated EVM development container")
+
+func TestIsolatedEVMAcceptance(t *testing.T) {
+	if !*liveEVMAcceptance {
+		t.Skip("actual isolated EVM service not requested")
+	}
+	p := operator.Profile{SchemaVersion: 1, ID: "prompt03-evm", Name: "Isolated Prompt 03 EVM", Family: "evm", Environment: "local", NetworkID: "31337", BridgeChainID: 1, Contract: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512", Codec: operator.EVMCodec, SourceCommit: operator.EVMSource, CodeHash: "8888608cab3c9e9054a20924b931696992c89cdcb0b8bf2dba3e78602d743913", Reviewed: true, ReviewEvidence: "isolated oversized development artifact only"}
+	s, e := NewEVMSnapshot(operator.Binding{Profile: p, RPC: "http://127.0.0.1:18083"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	state, e := s.Read(context.Background(), []string{"0x70997970C51812dc3A010C7d01b50e0d17dc79C8"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
+		t.Fatalf("unexpected EVM snapshot: %+v", state)
+	}
+	t.Logf("actual finalized EVM snapshot height=%d members=%d nonce=%s paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
+}
