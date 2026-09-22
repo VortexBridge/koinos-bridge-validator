@@ -540,3 +540,11 @@ Hardhat 2.22.6 / EDR 0.4.1 with network ID 31337, no public ports and no forks.
 Its finalized tag is a local development-node behavior, not public consensus.
 The reviewed runtime is 27,908 bytes; this lab explicitly permits oversized
 contracts. This does not establish deployability under the public EVM size limit.
+
+With both isolated-chain flags, `TestIsolatedEVMTransferRead` reads the fixed
+synthetic deposit recorded in the Prompt 03 evidence. One mock WETH is escrowed
+on Ethereum and reconstructed as 100,000,000 bridge units (8 decimals), with
+zero relayer payment. The reader also queries irreversible Koinos completion
+status and reconstructs the destination digest. The destination token address
+is reserved for the synthetic fixture; this check does not prove token deployment,
+bridge support, signature issuance or completed delivery on Koinos.
