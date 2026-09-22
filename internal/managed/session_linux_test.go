@@ -8,12 +8,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/util"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
@@ -224,5 +227,66 @@ func TestLinuxAbruptLossRequiresReconciliation(t *testing.T) {
 	op, e := s.Sign(context.Background(), "transfer-1")
 	if e != nil || signer(t, op) != p.EVMAddress {
 		t.Fatal("retained signature lost", e)
+	}
+}
+
+type unlockReconcileVerifier struct {
+	fixtureVerifier
+	checkpoints int
+}
+
+func (v *unlockReconcileVerifier) Reconcile(ctx context.Context, p Policy, j Journal) (string, error) {
+	v.checkpoints++
+	if v.reconcileErr {
+		return "", errors.New("changed pending operation")
+	}
+	return strings.Repeat(strconv.Itoa(v.checkpoints), 64), nil
+}
+func TestLinuxManualEntryHasFreshPostUnlockChecks(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("non-root Linux memory protections required")
+	}
+	for _, kind := range []string{"slow-entry", "approval-revoked", "pending-changed", "cancelled"} {
+		t.Run(kind, func(t *testing.T) {
+			root := dir(t)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "user-config"))
+			vault, p := makeVault(t, root)
+			v := &unlockReconcileVerifier{}
+			s, e := Open(filepath.Join(root, "session"), p, v)
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer s.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			e = s.Activate(ctx, vault, func() ([]byte, error) {
+				switch kind {
+				case "slow-entry":
+					time.Sleep(11 * time.Second)
+				case "approval-revoked":
+					v.edit = func(e *Evidence) { e.ReleaseApproved = false }
+				case "pending-changed":
+					v.reconcileErr = true
+				case "cancelled":
+					cancel()
+				}
+				return password()
+			})
+			if kind == "slow-entry" {
+				if e != nil || v.checkpoints != 2 || s.journal.Checkpoint != strings.Repeat("2", 64) {
+					t.Fatal("manual wait or fresh checkpoint failed", e, v.checkpoints)
+				}
+			} else {
+				if e == nil || s.keys != nil || len(s.identityLeases) != 0 || s.journal.State == "active" {
+					t.Fatal("changed evidence left signer active")
+				}
+				// A rejected unlock must release identity leases and permit a fresh attempt.
+				v.edit = nil
+				v.reconcileErr = false
+				if e = s.Activate(context.Background(), vault, password); e != nil {
+					t.Fatal("failed unlock retained keys or locks", e)
+				}
+			}
+		})
 	}
 }

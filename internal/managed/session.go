@@ -173,6 +173,25 @@ func (s *Session) check(ctx context.Context) error {
 	return nil
 }
 
+// activationCheckpoint bounds live checks separately from human secret entry.
+// It must run again after unlock: both approvals and pending operations can
+// change while the operator is typing. Caller holds the session lock.
+func (s *Session) activationCheckpoint(parent context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	if err := s.check(ctx); err != nil {
+		return "", err
+	}
+	checkpoint, err := s.verifier.Reconcile(ctx, s.policy, clone(s.journal))
+	if err != nil || !validHash(checkpoint) {
+		return "", errors.New("pending operations and checkpoints require reconciliation")
+	}
+	if err = s.check(ctx); err != nil {
+		return "", err
+	}
+	return checkpoint, nil
+}
+
 // Activate never accepts keys from an HTTP caller. Unlock performs the Linux
 // host protections and public-identity checks before returning any private keys.
 func (s *Session) Activate(ctx context.Context, vault string, passphrase func() ([]byte, error)) error {
@@ -181,14 +200,8 @@ func (s *Session) Activate(ctx context.Context, vault string, passphrase func() 
 	if s.closed || s.keys != nil {
 		return errors.New("session closed or already unlocked")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := s.check(ctx); err != nil {
+	if _, err := s.activationCheckpoint(ctx); err != nil {
 		return err
-	}
-	checkpoint, err := s.verifier.Reconcile(ctx, s.policy, clone(s.journal))
-	if err != nil || !validHash(checkpoint) {
-		return errors.New("pending operations and checkpoints require reconciliation")
 	}
 	// Share the existing standalone signer's same-user identity locks. A second
 	// data directory is not a second signing identity. Cross-host replacement
@@ -215,7 +228,8 @@ func (s *Session) Activate(ctx context.Context, vault string, passphrase func() 
 		return err
 	}
 	// Unlock can take time; recheck immediately before admitting requests.
-	if err = s.check(ctx); err != nil {
+	checkpoint, err := s.activationCheckpoint(ctx)
+	if err != nil {
 		keys.Close()
 		return err
 	}

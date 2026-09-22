@@ -313,6 +313,21 @@ The Linux tests demonstrate this policy using a synthetic membership transition,
 including an old session still running when replacement is attempted. They do
 not establish on-chain rotation finality or independent-host control.
 
+## Manual unlock timing and fresh recovery checks
+
+Managed activation uses separately bounded live checks before and after secret
+entry. Time spent typing is not charged against the ten-second RPC verification
+window. The caller's cancellation or deadline still applies. After successful
+vault decryption, current approvals and all retained operations are checked again;
+the persisted activation checkpoint comes from this second reconciliation.
+
+A revoked approval, changed pending operation or cancelled activation closes the
+unlocked keys and releases identity leases before returning. No active state is
+persisted. Linux synthetic-vault tests exercise an eleven-second entry delay,
+revocation, reconciliation failure and cancellation, including a fresh retry after
+rejection. The interactive CLI still must connect terminal interruption to the
+caller lifecycle; this library callback is not an interruptible remote unlock API.
+
 ## Remaining acceptance work (must not be skipped)
 
 1. Implement reviewed live local-chain evidence/reconciliation adapters and wire
