@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/host"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/managed"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/operator"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
@@ -31,6 +32,7 @@ func read(path string, v interface{}) error {
 func run() error {
 	f := flag.NewFlagSet("vortex-host", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
+	config := f.String("config", "", "private managed runtime configuration")
 	root := f.String("root", "", "private installation directory")
 	instance := f.String("instance", "", "local installation identity")
 	bundle := f.String("bundle", "", "private uncompressed tar")
@@ -40,7 +42,7 @@ func run() error {
 	candidateResult := f.String("candidate-result", "", "private isolated runner result")
 	approval := f.String("approval", "", "local approval record")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor, authorize, qualify or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize, qualify, activate or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -118,6 +120,14 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(i)
+	case "activate":
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		session, vault, e := managed.PrepareRuntime(*root, *config, *trust)
+		if e != nil {
+			return e
+		}
+		return managed.RunInteractive(ctx, session, vault, os.Stdin, os.Stdout, func() ([]byte, error) { return keyvault.ReadSecret(-1, "Unlock local validator vault") })
 	case "uninstall":
 		return host.Uninstall(*root)
 	case "run":

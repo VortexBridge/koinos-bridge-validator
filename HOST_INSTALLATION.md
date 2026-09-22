@@ -441,3 +441,31 @@ is performed.
 Composition compiles and passes negative configuration tests and managed race
 checks. The positive installed-runtime path, interactive command and real-node
 acceptance remain unverified. Do not treat successful preparation as activation.
+
+## Interactive managed activation command
+
+The host command now connects the composed runtime to manual terminal unlock:
+
+```sh
+/absolute/private/installation/releases/BUNDLE_HASH/vortex-host \
+  --root /absolute/private/installation \
+  --config /absolute/private/runtime.json \
+  --trust /absolute/private/publishers.json activate
+```
+
+Use the exact privately installed executable; all review/artifact bindings apply.
+The installation lock remains held for the process lifetime. The password is read
+from the local terminal with echo disabled, before the command reader starts.
+There are no password arguments, password environment variables or unattended
+unlock flags. After activation, enter `status`, `sign DIRECTION/TRANSACTION:INDEX`,
+or `stop`. Signing returns public signatures only and does not submit a transfer.
+EOF, stop, cancellation or output failure closes keys and the session; shutdown
+persistence errors propagate to the caller. Unlocking again requires an explicit
+new invocation. No automatic signer restart is enabled.
+
+Linux tests drive the command-loop function with synthetic encrypted keys and
+verified fixture operations in both directions, then test cancellation with a
+blocked input pipe. These tests do not yet invoke the installed `activate` command
+against actual RPC nodes or a terminal. Complete installed positive activation,
+terminal signal restoration, host-loss recovery and independent-host acceptance
+remain outstanding.
