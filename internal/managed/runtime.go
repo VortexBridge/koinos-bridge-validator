@@ -42,6 +42,21 @@ type RuntimeConfig struct {
 // process. The host supervisor must hold host.lock throughout session lifetime.
 // Configuration changes require a new signed host review and recovery review.
 func PrepareRuntime(root, configPath, trustPath string) (*Session, string, error) {
+	return prepareRuntime(root, configPath, trustPath, nil)
+}
+
+type artifactTransition struct {
+	ctx      context.Context
+	previous Policy
+	review   SignedHostReview
+}
+
+// PrepareArtifactUpgrade opens only an existing stopped journal. The host
+// supervisor must hold host.lock, just as for normal managed activation.
+func PrepareArtifactUpgrade(ctx context.Context, root, configPath, trustPath string, previous Policy, review SignedHostReview) (*Session, string, error) {
+	return prepareRuntime(root, configPath, trustPath, &artifactTransition{ctx, previous, review})
+}
+func prepareRuntime(root, configPath, trustPath string, upgrade *artifactTransition) (*Session, string, error) {
 	if !filepath.IsAbs(root) || !filepath.IsAbs(configPath) || !filepath.IsAbs(trustPath) {
 		return nil, "", errors.New("absolute runtime paths required")
 	}
@@ -105,6 +120,39 @@ func PrepareRuntime(root, configPath, trustPath string) (*Session, string, error
 	configHash := sha256.Sum256(raw)
 	configuration := hex.EncodeToString(configHash[:])
 	p := Policy{Instance: cfg.Instance, ArtifactSHA256: artifact, ConfigSHA256: configuration, EVMAddress: cfg.EVMAddress, KoinosAddress: cfg.KoinosAddress, PreviousEVM: cfg.PreviousEVM, PreviousKoinos: cfg.PreviousKoinos}
+	if upgrade != nil {
+		raw, err := worker.ReadPrivateFile(filepath.Join(root, "managed-session", "session.json"), 4<<20)
+		var existing Journal
+		if err != nil || host.JSON(raw, &existing) != nil || existing.State != "locked" {
+			return nil, "", errors.New("existing stopped journal required before artifact upgrade")
+		}
+		if existing.PolicySHA256 == Digest(p) {
+			if !artifactOnlyTransition(upgrade.previous, p) {
+				return nil, "", errors.New("invalid artifact transition")
+			}
+			if err = reviewed.authorizeUpgrade(upgrade.ctx, upgrade.previous, upgrade.review); err != nil {
+				return nil, "", err
+			}
+			session, err := Open(filepath.Join(root, "managed-session"), p, reviewed)
+			if err != nil {
+				return nil, "", err
+			}
+			if err = session.check(upgrade.ctx); err != nil {
+				session.Close()
+				return nil, "", err
+			}
+			return session, cfg.Vault, nil
+		}
+		session, err := Open(filepath.Join(root, "managed-session"), upgrade.previous, reviewed)
+		if err != nil {
+			return nil, "", err
+		}
+		if err = session.UpgradeArtifact(upgrade.ctx, p, upgrade.review); err != nil {
+			session.Close()
+			return nil, "", err
+		}
+		return session, cfg.Vault, nil
+	}
 	session, e := Open(filepath.Join(root, "managed-session"), p, reviewed)
 	return session, cfg.Vault, e
 }

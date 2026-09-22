@@ -42,10 +42,11 @@ func run() error {
 	validatorRelease := f.String("validator-release", "", "signed validator executable release")
 	candidateResult := f.String("candidate-result", "", "private isolated runner result")
 	approval := f.String("approval", "", "local approval record")
+	previousReview := f.String("previous-host-review", "", "private signed review of the prior artifact on this host")
 	previousPolicy := f.String("previous-policy", "", "private public-identity policy for the retired signer")
 	previousJournal := f.String("previous-journal", "", "private journal backup for the retired signer")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor, authorize, qualify, review-request, recover-retired, activate or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize, qualify, review-request, recover-retired, upgrade-state, activate or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -133,6 +134,26 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(i)
+	case "upgrade-state":
+		var previous managed.Policy
+		var review managed.SignedHostReview
+		if !filepath.IsAbs(*previousPolicy) || !filepath.IsAbs(*previousReview) {
+			return errors.New("absolute private upgrade input paths required")
+		}
+		if e = read(*previousPolicy, &previous); e != nil {
+			return e
+		}
+		if e = read(*previousReview, &review); e != nil {
+			return e
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		session, _, e := managed.PrepareArtifactUpgrade(ctx, *root, *config, *trust, previous, review)
+		if e != nil {
+			return e
+		}
+		defer session.Close()
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"retainedOperations": len(session.Status().Operations), "managedSigning": false, "notice": "Artifact transition reconciled on the same reviewed host. Existing signatures retained; vault remains locked."})
 	case "recover-retired":
 		var previous managed.Policy
 		var source managed.Journal

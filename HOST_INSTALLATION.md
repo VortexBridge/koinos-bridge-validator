@@ -719,3 +719,40 @@ same signature. It was then stopped. All five actual-chain reader checks passed.
 The checkpoint-specific acceptance test now expects Koinos irreversible height
 383 and completed reverse delivery. Source token fixture correction and local
 EVM finality/contract-size limitations continue to apply.
+
+## Same-host artifact upgrade with retained managed journal
+
+`upgrade-state` is a narrow transition between approved executable hashes. Stop
+signing before installation, preserve the old public `managed.Policy` JSON and
+its signed host review, then install the compatible release using the normal
+publisher signatures and local approval. Obtain the new signed host review and
+candidate qualification. Keep configuration bytes, identities, instance and
+previous-retirement identities unchanged. Complete this transition on the same
+machine, boot and dedicated user; host replacement uses `recover-retired` instead.
+
+```sh
+vortex-host --root /private/validator --config /private/validator/runtime.json \
+  --trust /private/validator/trust.json \
+  --previous-policy /private/upgrade/previous-policy.json \
+  --previous-host-review /private/upgrade/previous-host-review.json upgrade-state
+```
+
+The supervisor holds the installation lock; the transition requires an existing
+locked journal and takes its session lock. The old review must have a valid
+signature from the currently pinned reviewer and bind the previous artifact and
+configuration to this exact machine/boot/user. An expired historical review can
+prove continuity only: it never grants new release or host approval. The current
+artifact must independently pass fresh release, host, network, final membership
+and provenance gates, including retirement gates when applicable.
+
+Every retained operation is reread under the new artifact. Changed digests,
+changed families and completed-to-pending regressions are rejected. Public
+signatures are retained because both identities remain identical. A fresh
+checkpoint and final live gate precede atomic journal replacement. No keys are
+unlocked. Repeating the completed command rechecks continuity and current gates
+without repeating migration. Activate separately through manual unlock.
+
+Automated tests cover signature retention/reopen, completion, altered config,
+instance, identities and retirement policy, active signer refusal, wrong host,
+tampered prior review, missing or revoked approval, changed operation digest and
+checkpoint failure. Installed old-to-new package acceptance remains pending.
