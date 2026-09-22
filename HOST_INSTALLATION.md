@@ -697,3 +697,25 @@ The development token was updated at block 382, retaining supply 200000000. Its
 new Wasm SHA256 is `08e5af270038c36010be25a30424ed344cd31611379e99e87a4056ff4143912e`.
 The reviewed bridge Wasm and original contract repository are unchanged. This
 fixture correction is not evidence that an unmodified deployed token works.
+
+## Installed reverse signature and EVM delivery
+
+Bundle `f30d36a2cfb8d015d532fd5a00eb38e7adfe6df5e1612b062c195f9555ba902d`
+(source `189c6d3`) passed the actual isolated candidate checker before fresh local
+approval. A fresh third synthetic validator installed it, manually unlocked and
+signed the irreversible Koinos operation at block 383, event 3. The runtime read
+its location from private `operation-hints.json` without changing policy.
+
+An independent ethers reconstruction matched the managed EVM digest and recovered
+validator `0x90F79bf6EB2c4f870365E785982E1f101E93b906`. One signature was rejected
+by `callStatic` with quorum not met. The actual two-signature delivery succeeded
+at EVM block 11; recipient balance change plus gas was exactly 1 ETH and bridge
+escrow fell from 2 WETH to 1 WETH. The second signature came from a published
+Hardhat fixture account, not a second installed runtime. Therefore this does not
+claim two-installed-validator reverse acceptance.
+
+Restarting the third installed validator reconciled completion and retained the
+same signature. It was then stopped. All five actual-chain reader checks passed.
+The checkpoint-specific acceptance test now expects Koinos irreversible height
+383 and completed reverse delivery. Source token fixture correction and local
+EVM finality/contract-size limitations continue to apply.

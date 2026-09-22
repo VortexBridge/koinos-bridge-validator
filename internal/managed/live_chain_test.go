@@ -25,7 +25,7 @@ func TestIsolatedKoinosAcceptance(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if state.Height != 319 || state.Nonce != 4 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
+	if state.Height != 383 || state.Nonce != 4 || state.Paused || len(state.Validators) != 3 || state.CodeHash != p.CodeHash {
 		t.Fatalf("unexpected development snapshot: %+v", state)
 	}
 	t.Logf("actual irreversible bridge snapshot height=%d members=%d nonce=%d paused=%t", state.Height, len(state.Validators), state.Nonce, state.Paused)
@@ -151,7 +151,7 @@ func TestIsolatedReverseTransferRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Completed || got.BridgeEventsInTransaction != 1 || got.Transfer.Amount != "100000000" || got.Transfer.Payment != "0" || got.Transfer.Metadata != "prompt03 reverse transfer" || got.Transfer.Recipient != "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" {
+	if !got.Completed || got.BridgeEventsInTransaction != 1 || got.Transfer.Amount != "100000000" || got.Transfer.Payment != "0" || got.Transfer.Metadata != "prompt03 reverse transfer" || got.Transfer.Recipient != "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" {
 		t.Fatalf("unexpected reverse transfer: %+v", got)
 	}
 	digest, err := TransferDigest(destination.Profile, got.Transfer)
