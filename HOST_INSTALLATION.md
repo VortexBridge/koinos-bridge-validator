@@ -46,8 +46,21 @@ vortex-host --root /absolute/private/host --instance my-validator \
   --trust /absolute/private/publishers.json \
   --approval /absolute/private/approval.json install
 vortex-host --root /absolute/private/host doctor
+vortex-host --root /absolute/private/host --instance my-validator \
+  --trust /absolute/private/publishers.json authorize
 vortex-host --root /absolute/private/host run
 ```
+
+`authorize` rechecks current local approval, its time window, publisher signatures
+and the retained exact archive against the installed files. It still reports
+managed signing unavailable. The archive is retained privately alongside extracted
+files, so installed storage is larger than the download. Old installation records
+without the signed release/approval and archive cannot authorize a managed signer.
+
+`InstalledVerifier` joins these local checks to the running executable and exact
+configuration bytes on every inspection, and caps evidence validity at approval
+expiry. The chain/recovery verifier and candidate qualification remain separate
+integration work; no dashboard or network response may assert release approval.
 
 Installation never launches a process. `run` starts only the private operator
 service, with no keys or automatically authorized signer. Its default API listens

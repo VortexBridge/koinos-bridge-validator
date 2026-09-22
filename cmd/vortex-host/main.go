@@ -37,7 +37,7 @@ func run() error {
 	trust := f.String("trust", "", "local publisher policy")
 	approval := f.String("approval", "", "local approval record")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -56,6 +56,18 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"installed": true, "enabled": i.Enabled, "version": i.Version, "managedSigning": false, "notice": "Artifact verified. Public signing is blocked; use the operator doctor for configured observers."})
 
+	}
+
+	if f.Arg(0) == "authorize" {
+		var t operator.ReleaseTrust
+		if e := read(*trust, &t); e != nil {
+			return e
+		}
+		i, e := host.Authorize(*root, t, *instance, time.Now())
+		if e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"instance": i.Instance, "version": i.Version, "releaseDigest": i.Digest, "releaseApproved": true, "managedSigning": false, "notice": "Local release approval and exact artifact verified; chain, custody and recovery gates still required."})
 	}
 	lease, e := worker.Acquire(*root, "host.lock")
 	if e != nil {

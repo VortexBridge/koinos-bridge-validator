@@ -23,18 +23,20 @@ const MaxBundle = 256 << 20
 var Files = []string{"koinos-bridge-validator", "vortex-operator", "vortex-keys", "vortex-candidate-check", "vortex-host", "vortex-operator.service"}
 
 type Installation struct {
-	Schema         int               `json:"schema"`
-	Instance       string            `json:"instance"`
-	Digest         string            `json:"releaseDigest"`
-	Artifact       string            `json:"artifactSha256"`
-	Version        string            `json:"version"`
-	Sequence       uint64            `json:"sequence"`
-	ConfigSchema   uint32            `json:"configSchema"`
-	DatabaseSchema uint32            `json:"databaseSchema"`
-	Codec          string            `json:"codec"`
-	Platform       string            `json:"platform"`
-	Files          map[string]string `json:"files"`
-	Enabled        bool              `json:"enabled"`
+	Schema         int                      `json:"schema"`
+	Instance       string                   `json:"instance"`
+	Digest         string                   `json:"releaseDigest"`
+	Artifact       string                   `json:"artifactSha256"`
+	Version        string                   `json:"version"`
+	Sequence       uint64                   `json:"sequence"`
+	ConfigSchema   uint32                   `json:"configSchema"`
+	DatabaseSchema uint32                   `json:"databaseSchema"`
+	Codec          string                   `json:"codec"`
+	Platform       string                   `json:"platform"`
+	Files          map[string]string        `json:"files"`
+	Enabled        bool                     `json:"enabled"`
+	Release        operator.SignedRelease   `json:"release"`
+	Approval       operator.ReleaseApproval `json:"approval"`
 }
 
 func hash(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -84,7 +86,7 @@ func Atomic(dir, name string, value interface{}) error {
 }
 func Read(root string) (Installation, error) {
 	var i Installation
-	b, err := worker.ReadPrivateFile(filepath.Join(root, "installation.json"), 32768)
+	b, err := worker.ReadPrivateFile(filepath.Join(root, "installation.json"), 131072)
 	if err != nil {
 		return i, err
 	}
@@ -164,6 +166,8 @@ func Install(root, instance string, archive []byte, signed operator.SignedReleas
 				return empty, err
 			}
 			old.Enabled = true
+			old.Release = signed
+			old.Approval = approval
 			return old, Atomic(root, "installation.json", old)
 		}
 		compatible := false
@@ -235,7 +239,23 @@ func Install(root, instance string, archive []byte, signed operator.SignedReleas
 	if len(hashes) != len(Files) {
 		return empty, errors.New("bundle is incomplete")
 	}
-	next := Installation{1, instance, v.Digest, artifact, v.Manifest.Version, v.Manifest.Sequence, v.Manifest.ConfigSchema, v.Manifest.DatabaseSchema, v.Manifest.SigningCodec, platform, hashes, true}
+	next := Installation{1, instance, v.Digest, artifact, v.Manifest.Version, v.Manifest.Sequence, v.Manifest.ConfigSchema, v.Manifest.DatabaseSchema, v.Manifest.SigningCodec, platform, hashes, true, signed, approval}
+	// Retain the authenticated archive to bind the installed file map to it.
+	archiveFile, e := os.OpenFile(filepath.Join(stage, "approved-bundle.tar"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if e != nil {
+		return empty, e
+	}
+	_, e = archiveFile.Write(archive)
+	if e == nil {
+		e = archiveFile.Sync()
+	}
+	ce := archiveFile.Close()
+	if e != nil {
+		return empty, e
+	}
+	if ce != nil {
+		return empty, ce
+	}
 	dest := filepath.Join(releases, artifact)
 	if _, e := os.Lstat(dest); os.IsNotExist(e) {
 		if err = os.Rename(stage, dest); err != nil {

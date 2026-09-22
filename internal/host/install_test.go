@@ -156,3 +156,45 @@ func TestTamperedInstallAndExclusiveHostLock(t *testing.T) {
 		t.Fatal("concurrent owner")
 	}
 }
+
+func TestAuthorizationRechecksApprovalAndSignedArchive(t *testing.T) {
+	for _, kind := range []string{"good", "revoked", "expired", "disabled", "publisher-removed", "tampered-map", "tampered-archive", "wrong-version"} {
+		t.Run(kind, func(t *testing.T) {
+			root := private(t)
+			b, s, trust, a := fixture(t, 1, nil)
+			i, e := Install(root, "fixture-host", b, s, trust, a, time.Now())
+			if e != nil {
+				t.Fatal(e)
+			}
+			switch kind {
+			case "revoked":
+				i.Approval.Revoked = true
+			case "expired":
+				i.Approval.WindowEnd = time.Now().Add(-time.Minute)
+			case "disabled":
+				i.Enabled = false
+			case "publisher-removed":
+				trust.Publishers = map[string]string{}
+			case "wrong-version":
+				i.Version = "9.0.0"
+			case "tampered-map":
+				replacement := []byte("malicious replacement")
+				if e = os.WriteFile(filepath.Join(root, "releases", i.Artifact, Files[0]), replacement, 0700); e != nil {
+					t.Fatal(e)
+				}
+				i.Files[Files[0]] = hash(replacement)
+			case "tampered-archive":
+				if e = os.WriteFile(filepath.Join(root, "releases", i.Artifact, "approved-bundle.tar"), []byte("changed"), 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e = Atomic(root, "installation.json", i); e != nil {
+				t.Fatal(e)
+			}
+			_, e = Authorize(root, trust, "fixture-host", time.Now())
+			if (e == nil) != (kind == "good") {
+				t.Fatalf("authorization result %v", e)
+			}
+		})
+	}
+}

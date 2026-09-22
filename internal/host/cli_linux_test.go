@@ -79,6 +79,7 @@ func TestLinuxBundleCLIInstallRunStop(t *testing.T) {
 	invoke(install...)
 	before, _ := Read(installed)
 	invoke("doctor")
+	invoke("--trust", filepath.Join(root, "trust.json"), "--instance", "fixture-host", "authorize")
 	// Real bundled operator, no RPC bindings, no vault, isolated container network.
 	cmd := exec.Command(*hostBinary, append(base, "run")...)
 	cmd.Env = []string{"HOME=" + home, "PATH=/usr/bin:/bin"}
