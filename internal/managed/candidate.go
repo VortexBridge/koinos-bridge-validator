@@ -30,6 +30,13 @@ func checkCandidate(path string, root string, i host.Installation, trust operato
 	if host.JSON(raw, &q) != nil || q.Schema != 1 {
 		return time.Time{}, errors.New("invalid local candidate evidence")
 	}
+	return validateQualification(q, root, i, trust, now)
+}
+
+func validateQualification(q CandidateQualification, root string, i host.Installation, trust operator.ReleaseTrust, now time.Time) (time.Time, error) {
+	if q.Schema != 1 {
+		return time.Time{}, errors.New("unsupported candidate qualification schema")
+	}
 	release, e := operator.VerifyRelease(q.ValidatorRelease, trust, now)
 	if e != nil || release.Manifest.Component != "validator" {
 		return time.Time{}, errors.New("candidate validator release is not trusted")
@@ -63,4 +70,30 @@ func checkCandidate(path string, root string, i host.Installation, trust operato
 	}
 	expiry, _ := time.Parse(time.RFC3339, release.Manifest.ExpiresAt)
 	return expiry, nil
+}
+
+// ImportCandidate preserves any previous qualification unless all checks pass.
+// The caller supplies actual runner output, never a fabricated success report.
+// Local ownership authenticates the import; signing authority remains separate.
+func ImportCandidate(root, instance string, trust operator.ReleaseTrust, release operator.SignedRelease, result operator.CandidateResult, now time.Time) (string, error) {
+	if !filepath.IsAbs(root) {
+		return "", errors.New("absolute installation root required")
+	}
+	lease, e := worker.Acquire(root, "host.lock")
+	if e != nil {
+		return "", e
+	}
+	defer lease.Close()
+	installation, e := host.Authorize(root, trust, instance, now)
+	if e != nil {
+		return "", e
+	}
+	q := CandidateQualification{Schema: 1, ValidatorRelease: release, Result: result}
+	if _, e = validateQualification(q, root, installation, trust, now); e != nil {
+		return "", e
+	}
+	if e = host.Atomic(root, "candidate.json", q); e != nil {
+		return "", e
+	}
+	return filepath.Join(root, "candidate.json"), nil
 }

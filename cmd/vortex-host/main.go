@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/host"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/managed"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/operator"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/worker"
 )
@@ -35,9 +36,11 @@ func run() error {
 	bundle := f.String("bundle", "", "private uncompressed tar")
 	release := f.String("release", "", "signed operator bundle release")
 	trust := f.String("trust", "", "local publisher policy")
+	validatorRelease := f.String("validator-release", "", "signed validator executable release")
+	candidateResult := f.String("candidate-result", "", "private isolated runner result")
 	approval := f.String("approval", "", "local approval record")
 	if f.Parse(os.Args[1:]) != nil || f.NArg() != 1 {
-		return errors.New("use install, uninstall, doctor, authorize or run with flags before the command")
+		return errors.New("use install, uninstall, doctor, authorize, qualify or run with flags before the command")
 	}
 	if runtime.GOOS != "linux" || os.Geteuid() == 0 {
 		return errors.New("host commands require a dedicated non-root Linux user")
@@ -68,6 +71,24 @@ func run() error {
 			return e
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"instance": i.Instance, "version": i.Version, "releaseDigest": i.Digest, "releaseApproved": true, "managedSigning": false, "notice": "Local release approval and exact artifact verified; chain, custody and recovery gates still required."})
+	}
+	if f.Arg(0) == "qualify" {
+		var t operator.ReleaseTrust
+		var release operator.SignedRelease
+		var result operator.CandidateResult
+		if e := read(*trust, &t); e != nil {
+			return e
+		}
+		if e := read(*validatorRelease, &release); e != nil {
+			return e
+		}
+		if e := read(*candidateResult, &result); e != nil {
+			return e
+		}
+		if _, e := managed.ImportCandidate(*root, *instance, t, release, result, time.Now()); e != nil {
+			return e
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"candidateQualified": true, "managedSigning": false, "notice": "Exact installed validator and checker qualified from local observation evidence; host, chain, custody and recovery gates still required."})
 	}
 	lease, e := worker.Acquire(*root, "host.lock")
 	if e != nil {

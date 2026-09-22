@@ -266,9 +266,32 @@ approvals and trust files remains outside this boundary.
 
 Fourteen new negative cases cover missing/insecure evidence, mismatched binaries,
 checker/platform/release, unsigned manifests, incomplete reports and invalid
-ordering. The fixture uses synthetic signed releases. The CLI workflow that
-imports a real runner result into this installed record remains to be connected.
+ordering. The fixture uses synthetic signed releases. The `vortex-host qualify` command imports the separately signed validator release
+and the private runner result into `candidate.json` after validating all bindings.
 Candidate observation checks do not prove managed signing or two-host recovery.
+
+After running the isolated candidate suite, approving the operator bundle and
+installing it, stop the observation service and import the actual local result:
+
+```sh
+vortex-host --root /absolute/private/installation --instance operator-local \
+  --trust /absolute/private/publishers.json \
+  --validator-release /absolute/private/validator-release.json \
+  --candidate-result /absolute/private/candidate-result.json qualify
+```
+
+Flags precede the command. Both input files must be private local records. The
+command holds the installation lock, rechecks the installed archive and current
+approval, then atomically writes `candidate.json`. Repeated valid imports are
+safe; a rejected import preserves the previous record. Output explicitly reports
+`managedSigning: false`. Import does not execute tests or unlock keys. Never
+replace actual runner output with a hand-written success declaration.
+
+Linux acceptance invokes the compiled command twice using synthetic signed
+releases/results, then rejects an incorrect checker hash and verifies the previous
+record survived. A full real-runner → signed bundle → installed activation exercise
+remains outstanding.
+
 
 ## Joined chain evidence
 
