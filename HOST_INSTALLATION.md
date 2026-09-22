@@ -679,3 +679,21 @@ checked. Changing a hint grants no authority and does not modify the approved
 runtime configuration or journal policy. Missing or incorrect hints reject the
 operation. This permits new Koinos transfers without repeated configuration and
 host-review changes.
+
+## Reverse-source acceptance and token fixture correction
+
+The actual Koinos source transfer is irreversible at block 383, event sequence 3,
+with normalized amount 100000000 and destination bridge chain 1. The real reader
+rejected a wrong block hint and reconstructed the expected EVM signing digest
+`db1bcb2dbc150f7f7746e5a15cc112230e5924f092a4052fc616d92be488ba85`.
+Installed reverse signing and destination delivery remain pending.
+
+The synthetic wrapped-token fixture required an additional correction before
+this source exercise: its `approve` event dereferenced `callArgs`, which the token
+class and generated entrypoint never initialized. Without allowance the source
+transfer was rejected; adding approval trapped. Initializing `callArgs` with
+`System.getArguments()` in the temporary token copy allowed approval and transfer.
+The development token was updated at block 382, retaining supply 200000000. Its
+new Wasm SHA256 is `08e5af270038c36010be25a30424ed344cd31611379e99e87a4056ff4143912e`.
+The reviewed bridge Wasm and original contract repository are unchanged. This
+fixture correction is not evidence that an unmodified deployed token works.

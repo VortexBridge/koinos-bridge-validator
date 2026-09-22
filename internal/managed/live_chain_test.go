@@ -130,3 +130,33 @@ func TestIsolatedRetiredIdentities(t *testing.T) {
 	}
 	t.Log("actual finalized membership accepts replacement and rejects retired signer")
 }
+
+func TestIsolatedReverseTransferRead(t *testing.T) {
+	if !*liveEVMAcceptance || !*liveKoinosAcceptance {
+		t.Skip("both isolated chains required")
+	}
+	source := operator.Binding{Profile: isolatedKoinosProfile(), RPC: "http://127.0.0.1:18081"}
+	destination := operator.Binding{Profile: isolatedEVMProfile(), RPC: "http://127.0.0.1:18083"}
+	const id = "12208733ff19f9521ff2ea7f99faa329a9cf4ff441e55d22935200ebcc04f9d14a27:3"
+	height := uint64(382)
+	reader, err := NewKoinosEVMReader(source, destination, map[string]string{"162pT1wYEiKS9cXBbCsz6JHPFeGchtBdND": "0x5FbDB2315678afecb367f032d93F642f64180aa3"}, 86400000, func(context.Context, string) (uint64, error) { return height, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = reader.ReadTransfer(context.Background(), id); err == nil {
+		t.Fatal("wrong mutable block hint accepted")
+	}
+	height = 383
+	got, err := reader.ReadTransfer(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Completed || got.BridgeEventsInTransaction != 1 || got.Transfer.Amount != "100000000" || got.Transfer.Payment != "0" || got.Transfer.Metadata != "prompt03 reverse transfer" || got.Transfer.Recipient != "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" {
+		t.Fatalf("unexpected reverse transfer: %+v", got)
+	}
+	digest, err := TransferDigest(destination.Profile, got.Transfer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("actual irreversible reverse transfer amount=%s event=3 digest=%s", got.Transfer.Amount, digest)
+}
