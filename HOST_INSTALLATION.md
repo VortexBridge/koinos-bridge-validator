@@ -221,6 +221,27 @@ replaying/freezing and refreshing an actual isolated Koinos replica have **not**
 been exercised. The managed activation command does not use this adapter yet.
 Public-route readiness and independent-host acceptance remain blocked.
 
+## Finalized EVM membership snapshot
+
+`managed.NewEVMSnapshot` reads the reviewed contract's code, bridge chain ID,
+nonce, pause state, validator count, indexed validator array and `isValidator`
+authority flags. Every state call uses the same finalized block hash with
+`requireCanonical`; canonicality, finality and network identity are rechecked
+before returning evidence. The full unsigned 256-bit nonce is retained.
+
+Callers can explicitly probe current and previous identities. Every listed
+validator must have an active authority flag, and a probed identity absent from
+the list must have an inactive flag. A list/mapping discrepancy blocks the read:
+absence from the array alone is insufficient retirement evidence. Enumeration is
+bounded to 256 validators and probes to 32 identities; unsupported counts fail
+closed. These limits are development safeguards, not governance decisions.
+
+Eighteen HTTP scenarios cover pinned reads, three-member enumeration, explicit
+retirement probes, malformed results, inconsistent authority flags and changed
+network/finality. Real-chain membership rotation and activation integration remain
+unverified. This adapter reports chain state only; it does not establish host
+security, candidate qualification, release approval or permission to sign.
+
 ## Replacement and fencing
 
 A same-host stop is enforced by process/data locks and key disposal. These locks
