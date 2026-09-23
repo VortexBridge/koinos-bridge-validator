@@ -41,6 +41,26 @@ locally for this installation identity and time window. Its artifact hash is the
 whole tar archive hash. Do not pass a bundle manifest to the existing
 validator-executable staging/adoption commands: those hash a single executable.
 
+For disposable development-host observation checks only,
+`scripts/host-acceptance-fixture.go` can make a short-lived synthetic publisher
+signature, trust file and local approval for an exact AMD64 bundle. It requires
+an instance name beginning with `synthetic-` and a new private output directory.
+The private publisher key is discarded and cannot be used for later releases.
+The output is never production provenance or permission to activate a signer.
+
+```sh
+go run scripts/host-acceptance-fixture.go \
+  --bundle /absolute/disposable/build/vortex-host-linux-amd64.tar \
+  --out /absolute/private/new-fixture-directory \
+  --instance synthetic-host-a \
+  --source-commit "$(git rev-parse HEAD)"
+```
+
+Verify the source tree is clean before running this command. Transfer
+only the bundle, signed release, public trust and local approval to the test
+host. Keep each file owner-only; verify the bundle hash again after transfer.
+Do not transfer a real publisher private key or any validator signing key.
+
 ## Install, inspect, upgrade and remove
 
 Run as a dedicated non-root Linux account. Keep release, approval, trust and
