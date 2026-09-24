@@ -56,11 +56,17 @@ type Evidence struct {
 	Checkpoint         string
 }
 type Operation struct {
-	ID        string `json:"id"`
-	Family    string `json:"family"`
-	Digest    string `json:"digest"`
-	State     string `json:"state"` // pending, signed, completed
-	Signature string `json:"signature,omitempty"`
+	ID                   string    `json:"id"`
+	Family               string    `json:"family"`
+	Digest               string    `json:"digest"`
+	State                string    `json:"state"` // pending, signed, completed
+	Signature            string    `json:"signature,omitempty"`
+	ObservedAt           time.Time `json:"observedAt,omitempty"`
+	SourceBlockHash      string    `json:"sourceBlockHash,omitempty"`
+	DestinationBlockHash string    `json:"destinationBlockHash,omitempty"`
+	SourceFinality       string    `json:"sourceFinality,omitempty"`
+	DestinationFinality  string    `json:"destinationFinality,omitempty"`
+	ExpiresAt            string    `json:"expiresAt,omitempty"`
 }
 type Journal struct {
 	Schema       int                  `json:"schema"`
@@ -297,6 +303,12 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 			s.lock()
 			return Operation{}, errors.New("operation changed; recovery review required")
 		}
+		old.ObservedAt = op.ObservedAt
+		old.SourceBlockHash = op.SourceBlockHash
+		old.DestinationBlockHash = op.DestinationBlockHash
+		old.SourceFinality = op.SourceFinality
+		old.DestinationFinality = op.DestinationFinality
+		old.ExpiresAt = op.ExpiresAt
 		if op.State == "completed" {
 			old.State = "completed"
 			s.journal.Operations[id] = old
@@ -307,6 +319,11 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 			return old, nil
 		}
 		if old.State == "signed" {
+			s.journal.Operations[id] = old
+			if err = s.save(); err != nil {
+				s.lock()
+				return Operation{}, err
+			}
 			return old, nil
 		}
 		if old.State == "completed" {
@@ -406,6 +423,12 @@ func (s *Session) Drain(parent context.Context) error {
 			return errors.New("drain blocked by a retained operation awaiting finality")
 		}
 		old.State = "completed"
+		old.ObservedAt = current.ObservedAt
+		old.SourceBlockHash = current.SourceBlockHash
+		old.DestinationBlockHash = current.DestinationBlockHash
+		old.SourceFinality = current.SourceFinality
+		old.DestinationFinality = current.DestinationFinality
+		old.ExpiresAt = current.ExpiresAt
 		next.Operations[id] = old
 	}
 	checkpoint, err := s.verifier.Reconcile(ctx, s.policy, next)
@@ -449,6 +472,12 @@ func (s *Session) validateJournal() error {
 	for id, op := range s.journal.Operations {
 		if id != op.ID || len(id) == 0 || len(id) > 128 || !validHash(op.Digest) || (op.Family != "evm" && op.Family != "koinos") {
 			return errors.New("corrupt operation journal")
+		}
+		if !op.ObservedAt.IsZero() || op.SourceBlockHash != "" || op.DestinationBlockHash != "" || op.SourceFinality != "" || op.DestinationFinality != "" || op.ExpiresAt != "" {
+			expiry, expiryErr := uint64Value(op.ExpiresAt)
+			if op.ObservedAt.IsZero() || op.ObservedAt.After(time.Now().Add(5*time.Second)) || !validHash(strings.TrimPrefix(op.SourceBlockHash, "0x")) || !validHash(strings.TrimPrefix(op.DestinationBlockHash, "0x")) || op.SourceFinality != "finalized" || op.DestinationFinality != "finalized" || expiryErr != nil || expiry.Sign() == 0 {
+				return errors.New("invalid retained operation evidence")
+			}
 		}
 		if op.State == "pending" {
 			if op.Signature != "" {

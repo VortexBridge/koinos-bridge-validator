@@ -73,7 +73,7 @@ func (v *OperationVerifier) read(ctx context.Context, id string) (Operation, Tra
 	if r.Completed {
 		state = "completed"
 	}
-	return Operation{ID: id, Family: v.destination.Family, Digest: digest, State: state}, r, nil
+	return Operation{ID: id, Family: v.destination.Family, Digest: digest, State: state, ObservedAt: r.ObservedAt, SourceBlockHash: r.SourceBlockHash, DestinationBlockHash: r.DestinationBlockHash, SourceFinality: r.SourceFinality, DestinationFinality: r.DestinationFinality, ExpiresAt: r.Transfer.Expiration}, r, nil
 }
 func (v *OperationVerifier) Operation(ctx context.Context, p Policy, id string) (Operation, error) {
 	op, _, err := v.read(ctx, id)

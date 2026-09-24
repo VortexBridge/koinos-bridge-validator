@@ -47,7 +47,7 @@ func (s *Store) Doctor(ctx context.Context) DoctorReport {
 			report.Status = "attention-required"
 		}
 	}
-	add("signing-readiness", "unknown", "Managed signing is disabled. Membership, peer/token mappings, finality, independent custody and recovery fencing still require separate verification.")
+	add("signing-readiness", "unknown", "This worker preflight cannot authorize signing. Inspect the separate managed lifecycle for membership, finality, host review, custody and recovery fencing.")
 	r, err := s.registration()
 	if err != nil {
 		add("registration", "failed", "No readable registration. Use the local worker-register command with a private worker directory and reviewed binary digest.")

@@ -119,6 +119,48 @@ to 20 seconds before terminating an unresponsive child. On Linux the child also
 receives SIGTERM if its supervisor dies. The service unit uses control-group
 termination and does not automatically restart.
 
+## Connect the administration interface
+
+Keep the reviewed managed runtime at `<installation-root>/runtime.json` with
+mode 0600 and use that same file for `review-request`, recovery and `activate`.
+The keyless operator service reads this conventional owner-only copy to report
+the public instance, routes and signer lifecycle. It never returns the RPC URLs,
+vault path, host-review paths or access token.
+
+Open `/operate` in the interface and connect it to the loopback service. For a
+remote validator, forward loopback port 3021 through SSH and keep the browser
+endpoint on `http://127.0.0.1`. Read the 64-character token from the operator
+state directory's owner-only `access-token` file and enter it into the page. The
+page keeps it only in memory, sends it as a bearer token, omits cookies and
+rejects non-loopback endpoints. Disconnect or close the page to discard it.
+
+The typed lifecycle views are:
+
+- `GET /v1/lifecycle`: verifies all six installed bundle files, the managed
+  runtime, route identities and the signer journal/process relationship.
+- `GET /v1/transfers`: reports the source receipt, independent observation,
+  local signature, aggregate quorum, destination submission/finality, expiry
+  and rejection knowledge retained by this host. Unknown evidence remains
+  `unknown`; a local signature is never presented as quorum.
+- `GET /v1/incidents` and `POST /v1/incidents/check`: report and persist bounded,
+  sanitized diagnostics without endpoints or host identifiers.
+- `GET /v1/recovery`: joins encrypted-backup inventory, restore review and signer
+  fencing evidence with the protected-terminal recovery sequence.
+
+The browser has no unlock, key-import, arbitrary-signing, restore-secret or
+command-execution route. `activate`, `drain`, immediate `stop`, vault recovery
+and identity replacement remain explicit protected-terminal steps because they
+handle secret material or signer process authority. The Lifecycle and Recovery
+pages document those steps and show current evidence; they do not run them.
+
+Transfer history is local evidence, not a coordinator database. The signer
+journal now retains the independently read source/destination block hashes,
+finality, observation time and signature deadline for new or rechecked
+operations. Older journals remain readable and show those fields as unknown.
+Aggregate quorum, destination submission and rejected remote attempts stay
+unknown until a verified receipt is retained; the UI does not infer them from a
+fixed validator count or an external database.
+
 Running installation twice verifies the existing bytes and retains state. An
 upgrade requires a newer signed sequence, an explicitly supported predecessor
 version and unchanged configuration/database schemas and signing codec.

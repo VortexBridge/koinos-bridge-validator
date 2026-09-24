@@ -122,6 +122,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/lifecycle" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.ManagedLifecycle())
+	case r.URL.Path == "/v1/transfers" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.TransferHistory())
+	case r.URL.Path == "/v1/recovery" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.RecoveryState())
+	case r.URL.Path == "/v1/incidents" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.IncidentState(r.Context(), false))
+	case r.URL.Path == "/v1/incidents/check" && r.Method == "POST":
+		var req struct{}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, s.Store.IncidentState(r.Context(), true))
 	case r.URL.Path == "/v1/maintenance/participation" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.ParticipationState(time.Now().UTC()))
 	case r.URL.Path == "/v1/maintenance/participation/begin" && r.Method == "POST":
@@ -333,7 +348,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 202, status)
 	case r.URL.Path == "/v1/capabilities" && r.Method == "GET":
-		writeJSON(w, 200, map[string]interface{}{"families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "signingEnabled": false, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
+		writeJSON(w, 200, map[string]interface{}{"families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
 	case r.URL.Path == "/v1/updates" && r.Method == "GET":
 		trust, err := s.Store.ReleaseTrust()
 		publishers := []string{}
@@ -417,7 +432,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			observations = append(observations, o)
 		}
 		s.mu.Unlock()
-		writeJSON(w, 200, map[string]interface{}{"version": "operator-dev-1", "instanceId": s.Store.InstanceID(), "mode": "observation-only", "revision": revision, "profiles": profiles, "observations": observations, "events": events, "signerAvailable": false, "notice": "Private control plane. Locally registered observation workers have an independent lifecycle; managed signing is unavailable."})
+		writeJSON(w, 200, map[string]interface{}{"version": "operator-dev-2", "instanceId": s.Store.InstanceID(), "mode": "private-control-plane", "revision": revision, "profiles": profiles, "observations": observations, "events": events, "signerAvailable": false, "browserSigningAvailable": false, "notice": "Private control plane. Managed signer state is available through its typed lifecycle view; unlock and signing remain restricted to the protected local terminal."})
 	case r.URL.Path == "/v1/config/validate" && r.Method == "POST":
 		var b Binding
 		if err := decode(w, r, &b); err != nil {
