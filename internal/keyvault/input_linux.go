@@ -63,6 +63,9 @@ func ReadSecret(fd int, prompt string) ([]byte, error) {
 	defer setTerminalMode(int(tty.Fd()), state)
 	fmt.Fprint(tty, prompt+": ")
 	defer fmt.Fprintln(tty)
+	// Discard unfinished input on interruption and any extra pasted lines on
+	// success before a later shell or command reader can consume them.
+	defer unix.IoctlSetInt(int(tty.Fd()), unix.TCFLSH, unix.TCIFLUSH)
 	type result struct {
 		value []byte
 		err   error

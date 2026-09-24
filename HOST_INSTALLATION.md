@@ -434,8 +434,10 @@ A revoked approval, changed pending operation or cancelled activation closes the
 unlocked keys and releases identity leases before returning. No active state is
 persisted. Linux synthetic-vault tests exercise an eleven-second entry delay,
 revocation, reconciliation failure and cancellation, including a fresh retry after
-rejection. The interactive CLI still must connect terminal interruption to the
-caller lifecycle; this library callback is not an interruptible remote unlock API.
+rejection. The CLI registers SIGINT, SIGTERM and SIGHUP cancellation. A non-root
+Linux terminal test interrupts a partial synthetic passphrase and verifies that
+entry stops, echo is restored, and queued secret bytes are discarded. This is
+local terminal evidence, not the complete installed CLI lifecycle on two hosts.
 
 ## Remaining acceptance work (must not be skipped)
 
