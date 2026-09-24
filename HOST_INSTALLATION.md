@@ -539,10 +539,33 @@ Linux tests drive the command-loop function with synthetic encrypted keys and
 verified fixture operations in both directions, a blocked drain, then test
 cancellation with a blocked input pipe. Session tests cover a two-operation
 drain with an unchanged signature across restart. These new drain checks passed
-in Linux AMD64 and ARM64 containers; the updated executable has not yet been
-installed on either development VPS. Separate installed-command exercises cover
+in Linux AMD64 and ARM64 containers. Separate installed-command exercises cover
 actual RPC nodes, terminal unlock, crash recovery and fenced replacement.
-Full two-host and boot-time service acceptance remain outstanding.
+Full two-host managed-drain and boot-time service acceptance remain outstanding.
+
+The same AMD64 managed-package test executable from source commit `e554a73`
+also passed the interactive and two-operation drain checks as the dedicated
+non-root user on both real development VPSs. Its exact hash was checked on each
+host and the temporary test files were removed. This verifies Linux host
+behavior only: the newer signed bundle was not installed, and neither existing
+signer installation or its observation service was changed. The current
+synthetic replacement installation has no retained reviewer signing key in
+its test artifacts. A fresh review for an artifact-only upgrade cannot be
+issued from those artifacts; do not fabricate review continuity or bypass
+`upgrade-state`. Use a
+new isolated test installation with a deliberately retained, separately held
+synthetic reviewer key, or a separately reviewed reviewer-key rotation path.
+
+Subsequently the exact reproducible AMD64 drain bundle was given separate
+short-lived, synthetic operator-release signatures and local approvals for
+two **new private installation roots**, one on each VPS. Each host verified the
+same archive and launcher hashes, installed twice with an unchanged installation
+record, passed `doctor` and reported `managedSigning: false` from `authorize`.
+Activation without a reviewed runtime was rejected before any vault or journal
+was created. The existing observation services remained active and the older
+installed signer stayed locked. These fresh installations have not been given
+candidate qualification, host reviews or signing keys; installed live-chain
+multi-operation drain remains untested.
 
 ## Permission changes during transfer reads
 
