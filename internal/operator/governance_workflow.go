@@ -458,6 +458,56 @@ func (s *Store) SubmitGovernance(ctx context.Context, proposalID, profileID stri
 	return result, nil
 }
 
+// ReviewGovernanceSubmission performs the public, keyless checks used by the
+// terminal submit command before it opens a transaction-payer vault. Submit
+// repeats these checks after unlock so a concurrent chain change still fails.
+func (s *Store) ReviewGovernanceSubmission(ctx context.Context, proposalID, profileID string, observe ObservationProvider, now time.Time) (GovernanceRoute, error) {
+	if observe == nil {
+		observe = Observe
+	}
+	s.governanceMu.Lock()
+	defer s.governanceMu.Unlock()
+	journal, err := s.readGovernanceJournal()
+	if err != nil {
+		return GovernanceRoute{}, err
+	}
+	proposal, err := findProposal(&journal, proposalID)
+	if err != nil {
+		return GovernanceRoute{}, err
+	}
+	var route *GovernanceRoute
+	for i := range proposal.Routes {
+		if proposal.Routes[i].Profile.ID == profileID {
+			route = &proposal.Routes[i]
+		}
+	}
+	if route == nil || (route.Receipt != nil && route.Receipt.State != "submitting") {
+		return GovernanceRoute{}, errors.New("requested governance route is absent or already submitted")
+	}
+	binding, ok := s.Binding(profileID)
+	if !ok || binding.Profile != route.Profile {
+		return GovernanceRoute{}, errors.New("local deployment profile changed")
+	}
+	observation := observe(ctx, binding)
+	if err := validateGovernanceObservation(binding, observation, now); err != nil {
+		return GovernanceRoute{}, err
+	}
+	expected, err := EncodeAction(binding.Profile, Action{Kind: "set_pause", Pause: &proposal.Pause, Nonce: observation.Nonce, Expiration: proposal.Expiration})
+	if err != nil || !payloadEquivalent(expected, route.Payload) {
+		return GovernanceRoute{}, errors.New("proposal payload is stale, changed or for another domain")
+	}
+	signatures := make([]string, len(route.Approvals))
+	for i, approval := range route.Approvals {
+		signatures[i] = approval.Signature
+	}
+	if _, err := ValidateApprovals(binding.Profile, expected, signatures, observation.Validators, observation.Nonce, now); err != nil {
+		return GovernanceRoute{}, err
+	}
+	copy := *route
+	copy.Anchor = observationAnchor(observation)
+	return copy, nil
+}
+
 func (s *Store) ReconcileGovernance(ctx context.Context, proposalID string, executor GovernanceExecutor, now time.Time) (GovernanceProposal, error) {
 	if executor == nil {
 		return GovernanceProposal{}, errors.New("governance receipt reconciliation is unavailable")

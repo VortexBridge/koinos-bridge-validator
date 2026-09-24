@@ -22,6 +22,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/governanceexec"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/managed"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/operator"
@@ -67,6 +68,7 @@ func run() error {
 	waveResultID := flags.String("wave-result-id", "", "unique lowercase local wave-result ID")
 	progressID := flags.String("progress-id", "", "completed local signing-progress window ID")
 	governanceFile := flags.String("governance-file", "", "absolute portable governance proposal JSON")
+	governanceProposalID := flags.String("governance-proposal-id", "", "durable governance proposal ID")
 	governanceProfile := flags.String("governance-profile", "", "exact local deployment profile to sign")
 	signingVault := flags.String("signing-vault", "", "absolute encrypted validator signing vault")
 	expectedEVM := flags.String("expected-evm-signer", "", "reviewed EVM validator identity pinned to the vault")
@@ -74,6 +76,10 @@ func run() error {
 	unlockFD := flags.Int("unlock-passphrase-fd", -1, "inherited pipe for the vault passphrase; omitted for a hidden terminal prompt")
 	koinosReplica := flags.String("koinos-finality-replica", "", "private Koinos replica pinned to the live irreversible block")
 	koinosMembershipSeed := flags.String("koinos-membership-seed", "", "one reviewed current Koinos validator address used to enumerate membership")
+	payerVault := flags.String("payer-vault", "", "absolute encrypted two-chain transaction-payer vault")
+	expectedEVMPayer := flags.String("expected-evm-payer", "", "reviewed EVM transaction-payer identity pinned to the payer vault")
+	expectedKoinosPayer := flags.String("expected-koinos-payer", "", "reviewed Koinos transaction-payer identity pinned to the payer vault")
+	governanceExecutorData := flags.String("governance-executor-data", "", "absolute mode-0700 directory for exact prepared governance transactions")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -87,8 +93,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results, governance-sign")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" && command != "governance-submit" && command != "governance-reconcile" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results, governance-sign, governance-submit, governance-reconcile")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -172,6 +178,43 @@ func run() error {
 		}
 		envelope.ProposalID = proposal.ID
 		return json.NewEncoder(os.Stdout).Encode(envelope)
+	}
+	if command == "governance-submit" {
+		if *governanceProposalID == "" || *governanceProfile == "" || *payerVault == "" || *expectedEVMPayer == "" || *expectedKoinosPayer == "" || *governanceExecutorData == "" {
+			return errors.New("governance submission requires proposal, exact profile, payer vault, both reviewed payer identities and private executor data")
+		}
+		now := time.Now().UTC()
+		if _, err := s.ReviewGovernanceSubmission(context.Background(), *governanceProposalID, *governanceProfile, observe, now); err != nil {
+			return err
+		}
+		keys, _, err := keyvault.Unlock(*payerVault, *expectedEVMPayer, *expectedKoinosPayer, func() ([]byte, error) { return keyvault.ReadSecret(*unlockFD, "Transaction-payer vault passphrase") })
+		if err != nil {
+			return err
+		}
+		defer keys.Close()
+		executor, err := governanceexec.New(*governanceExecutorData, keys)
+		if err != nil {
+			return err
+		}
+		proposal, err := s.SubmitGovernance(context.Background(), *governanceProposalID, *governanceProfile, observe, executor, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(proposal)
+	}
+	if command == "governance-reconcile" {
+		if *governanceProposalID == "" || *governanceExecutorData == "" {
+			return errors.New("governance reconciliation requires proposal ID and private executor data")
+		}
+		executor, err := governanceexec.New(*governanceExecutorData, nil)
+		if err != nil {
+			return err
+		}
+		proposal, err := s.ReconcileGovernance(context.Background(), *governanceProposalID, executor, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(proposal)
 	}
 	if command == "participation-status" {
 		return json.NewEncoder(os.Stdout).Encode(s.ParticipationState(time.Now().UTC()))

@@ -128,6 +128,12 @@ func TestGovernancePortableQuorumPartialCompletionAndRestart(t *testing.T) {
 		t.Fatalf("proposal did not reach independent route quorum: %+v", proposal)
 	}
 	for _, route := range proposal.Routes {
+		reviewed, err := store.ReviewGovernanceSubmission(context.Background(), proposal.ID, route.Profile.ID, fixture.observe, fixture.now.Add(3*time.Second))
+		if err != nil || reviewed.Payload.Digest != route.Payload.Digest {
+			t.Fatalf("keyless submission preflight did not reconstruct exact route: %+v %v", reviewed, err)
+		}
+	}
+	for _, route := range proposal.Routes {
 		reviewed, err := store.reviewGovernanceSigning(context.Background(), proposal, route.Profile.ID, route.Anchor.Validators[0], fixture.observe, fixture.now.Add(3*time.Second))
 		if err != nil || reviewed.Payload.Digest != route.Payload.Digest {
 			t.Fatalf("protected signing preflight did not reconstruct the exact route: %+v %v", reviewed, err)

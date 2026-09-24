@@ -1242,9 +1242,58 @@ import preserve the other route's approvals so it can be revalidated and safely
 resumed. Receipts imported from another operator are never accepted as local
 finality.
 
-The ordinary service has no chain submission adapter and reports submission as
-disabled. The end-to-end interface exercise uses a synthetic isolated-chain
-executor only. A reviewed transaction-payer and receipt adapter for both local
-chains is still required before real submission can be enabled. Production
-profiles, arbitrary governance actions and browser-held signing secrets remain
-unavailable.
+Create a separate encrypted transaction-payer vault. Do not reuse a validator
+signing vault. The payer only funds and submits an already-approved transaction;
+it cannot replace the validator quorum. Keep the vault and its recovery path
+separate from the loopback service. Prepare an existing owner-only directory for
+durable signed transaction bytes:
+
+```sh
+install -d -m 0700 /private/payer /private/governance-submit
+vortex-keys --vault /private/payer/payer.vault generate
+```
+
+Record the two public payer identities printed by `vortex-keys`. After a route
+has current quorum, submit it from a protected terminal. The command performs a
+keyless public preflight before unlocking the payer vault, repeats the complete
+check immediately before submission and permits only reviewed `local` profiles.
+Use the Koinos finality flags for the Koinos route and omit them for EVM:
+
+```sh
+vortex-operator \
+  --data /private/operator \
+  --governance-proposal-id pause-bridge-1 \
+  --governance-profile local-koinos \
+  --payer-vault /private/payer/payer.vault \
+  --expected-evm-payer EVM_PAYER_ADDRESS \
+  --expected-koinos-payer KOINOS_PAYER_ADDRESS \
+  --governance-executor-data /private/governance-submit \
+  --koinos-finality-replica http://127.0.0.1:18082 \
+  --koinos-membership-seed KOINOS_VALIDATOR_ADDRESS \
+  governance-submit
+```
+
+Before contacting the chain, the command records a durable attempt in the
+operator journal and stores the exact signed transaction under its stable
+attempt ID. If the process or network fails at an uncertain point, repeat the
+same command. It validates and rebroadcasts those exact bytes instead of
+creating another transaction or consuming another nonce.
+
+Reconciliation needs no payer key. Run it after submission and repeat until the
+EVM receipt is finalized or the Koinos receipt is irreversible and canonical:
+
+```sh
+vortex-operator \
+  --data /private/operator \
+  --governance-proposal-id pause-bridge-1 \
+  --governance-executor-data /private/governance-submit \
+  governance-reconcile
+```
+
+The ordinary service deliberately has no transaction-payer key or submission
+executor and reports browser submission as disabled. Refresh the Proposals page
+after terminal submission or reconciliation to view the durable public state.
+Production profiles, arbitrary governance actions and browser-held signing or
+payer secrets remain unavailable. Unit and synthetic RPC tests cover both
+transaction families; acceptance against the actual isolated contracts remains
+required before this governance workflow is complete.
