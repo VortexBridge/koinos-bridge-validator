@@ -173,20 +173,31 @@ func (s *Session) check(ctx context.Context) error {
 	return nil
 }
 
+// Every live check has its own deadline. A single ten-second budget for the
+// complete check/reconcile/check sequence rejected healthy but slower remote
+// chain readers before the operator could unlock. The final check still reads
+// current approval and membership immediately before admitting the signer.
+func (s *Session) checkPhase(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	defer cancel()
+	return s.check(ctx)
+}
+
 // activationCheckpoint bounds live checks separately from human secret entry.
 // It must run again after unlock: both approvals and pending operations can
 // change while the operator is typing. Caller holds the session lock.
 func (s *Session) activationCheckpoint(parent context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
-	defer cancel()
-	if err := s.check(ctx); err != nil {
+	if err := s.checkPhase(parent); err != nil {
 		return "", err
 	}
+	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	checkpoint, err := s.verifier.Reconcile(ctx, s.policy, clone(s.journal))
-	if err != nil || !validHash(checkpoint) {
+	deadline := ctx.Err()
+	cancel()
+	if err != nil || deadline != nil || !validHash(checkpoint) {
 		return "", errors.New("pending operations and checkpoints require reconciliation")
 	}
-	if err = s.check(ctx); err != nil {
+	if err = s.checkPhase(parent); err != nil {
 		return "", err
 	}
 	return checkpoint, nil
@@ -259,14 +270,15 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 	if len(id) == 0 || len(id) > 128 {
 		return Operation{}, errors.New("invalid operation identifier")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := s.check(ctx); err != nil {
+	if err := s.checkPhase(ctx); err != nil {
 		s.lock()
 		return Operation{}, err
 	}
-	op, err := s.verifier.Operation(ctx, s.policy, id)
-	if ctx.Err() != nil {
+	readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	op, err := s.verifier.Operation(readCtx, s.policy, id)
+	readDeadline := readCtx.Err()
+	cancel()
+	if readDeadline != nil {
 		s.lock()
 		return Operation{}, errors.New("operation verification timed out")
 	}
@@ -275,7 +287,7 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 	}
 	// Receipt reconstruction can outlive approval or membership. Recheck before
 	// either returning a retained signature or preparing a new one.
-	if err = s.check(ctx); err != nil {
+	if err = s.checkPhase(ctx); err != nil {
 		s.lock()
 		return Operation{}, err
 	}
@@ -314,9 +326,13 @@ func (s *Session) Sign(ctx context.Context, id string) (Operation, error) {
 	}
 	// Durable intent must precede signing, but slow persistence must not extend
 	// a permit. A failed final check leaves an unsigned recoverable intent.
-	if err = s.check(ctx); err != nil {
+	if err = s.checkPhase(ctx); err != nil {
 		s.lock()
 		return Operation{}, err
+	}
+	if ctx.Err() != nil {
+		s.lock()
+		return Operation{}, errors.New("operation cancelled before signing")
 	}
 	digest, _ := hex.DecodeString(op.Digest)
 	// No private key leaves the session. Signature encodings are explicit.

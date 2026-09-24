@@ -8,6 +8,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
 )
 
 type fixtureVerifier struct {
@@ -15,6 +18,79 @@ type fixtureVerifier struct {
 	edit         func(*Evidence)
 	reconcileErr bool
 	operation    Operation
+}
+
+// Slow independent remote reads must each retain a bounded window. A single
+// deadline across all phases previously rejected a healthy second Linux host.
+type pacedVerifier struct {
+	fixtureVerifier
+	inspectDelay   time.Duration
+	reconcileDelay time.Duration
+	operationDelay time.Duration
+}
+
+func pause(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (v *pacedVerifier) Inspect(ctx context.Context, p Policy) (Evidence, error) {
+	if err := pause(ctx, v.inspectDelay); err != nil {
+		return Evidence{}, err
+	}
+	return v.fixtureVerifier.Inspect(ctx, p)
+}
+func (v *pacedVerifier) Reconcile(ctx context.Context, p Policy, j Journal) (string, error) {
+	if err := pause(ctx, v.reconcileDelay); err != nil {
+		return "", err
+	}
+	return v.fixtureVerifier.Reconcile(ctx, p, j)
+}
+func (v *pacedVerifier) Operation(ctx context.Context, p Policy, id string) (Operation, error) {
+	if err := pause(ctx, v.operationDelay); err != nil {
+		return Operation{}, err
+	}
+	return v.fixtureVerifier.Operation(ctx, p, id)
+}
+
+func TestActivationAllowsCumulativeLiveReadLatency(t *testing.T) {
+	v := &pacedVerifier{inspectDelay: 3500 * time.Millisecond, reconcileDelay: 3500 * time.Millisecond}
+	s, err := Open(dir(t), policy(), v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if checkpoint, err := s.activationCheckpoint(context.Background()); err != nil || checkpoint != strings.Repeat("c", 64) {
+		t.Fatalf("bounded live phases failed: checkpoint=%q error=%v", checkpoint, err)
+	}
+}
+
+func TestSigningAllowsCumulativeLiveReadLatency(t *testing.T) {
+	v := &pacedVerifier{inspectDelay: 3100 * time.Millisecond, operationDelay: 2100 * time.Millisecond}
+	v.operation = Operation{ID: "synthetic-transfer", Family: "evm", Digest: strings.Repeat("d", 64), State: "pending"}
+	s, err := Open(dir(t), policy(), v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	private, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.keys = &keyvault.Keys{EVM: private, Koinos: make([]byte, 32)}
+	s.journal.State = "active"
+	if err := s.save(); err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.Sign(context.Background(), "synthetic-transfer")
+	if err != nil || op.State != "signed" || op.Signature == "" {
+		t.Fatalf("bounded signing phases failed: state=%q error=%v", op.State, err)
+	}
 }
 
 func policy() Policy {

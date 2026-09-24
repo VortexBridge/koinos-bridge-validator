@@ -446,10 +446,14 @@ replacement test, and the complete installed command remains unwired.
 ## Manual unlock timing and fresh recovery checks
 
 Managed activation uses separately bounded live checks before and after secret
-entry. Time spent typing is not charged against the ten-second RPC verification
-window. The caller's cancellation or deadline still applies. After successful
-vault decryption, current approvals and all retained operations are checked again;
-the persisted activation checkpoint comes from this second reconciliation.
+entry. Each approval, host and chain check has a ten-second window; pending
+operation reconciliation has a separate twenty-second window. Time spent typing
+is not charged against these windows. The caller's cancellation or deadline
+still applies. After successful vault decryption, current approvals and all
+retained operations are checked again; the persisted activation checkpoint
+comes from this second reconciliation. A signing request similarly bounds each
+live check and receipt read separately, and repeats the live check immediately
+before producing a signature.
 
 A revoked approval, changed pending operation or cancelled activation closes the
 unlocked keys and releases identity leases before returning. No active state is
