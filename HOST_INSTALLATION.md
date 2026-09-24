@@ -7,17 +7,23 @@ upgrades preserving signatures. These paths have been exercised with synthetic
 keys and actual chain processes on one physical Docker host. Public signing stays
 disabled; never bypass this boundary through the legacy signer.
 
-The remaining acceptance requires two clean development hosts running the exact
-approved artifact, boot-time service/log-retention checks and operational backup
-and secrecy evidence. Two containers are not two hosts. Production operator
-independence and production-chain authorization are separate decisions.
+Two clean development hosts now run the same exact test-only approved artifact
+as keyless observation services after real reboots. Native non-root Linux
+synthetic signing tests passed independently on each. An encrypted synthetic
+observation backup restored from the first host on a separate Mac and on the
+second Linux host. The remaining acceptance is distributed **installed-runtime**
+signing, host-loss fencing and recovery, plus accepted host security and durable
+backup custody. Two containers are not two hosts, and two VPSs in one operator's
+account do not establish independent operators. Production-chain authorization
+is a separate decision.
 
-One real AMD64 development host now runs the refreshed bundle as a keyless,
-loopback-only user service after a compatible update and reboot. A stopped
-synthetic observation worker on that host produced an encrypted archive that was
-copied off-host and restored on a separate Mac, including a repeat restore after
-the source fixture was removed. This is not a second-Linux-host or signing-key
-recovery test.
+Both real AMD64 development hosts now run the refreshed bundle as keyless,
+loopback-only user services after reboots; the first also passed a compatible
+update. A stopped synthetic observation worker on the first produced an encrypted
+archive that was copied off-host and restored on a separate Mac and the second
+Linux host, including a repeat Mac restore after the source fixture was removed.
+The second-host restore required explicit configuration review before enabling
+observation. This is not a signing-key recovery or cross-host signer test.
 
 Later milestone sections retain dated laboratory evidence and its limitations.
 The current status above supersedes their historical statements of pending work.
@@ -132,16 +138,16 @@ key material or resets a database.
 The supplied user-service template assumes the independently verified launcher
 at `~/.local/bin/vortex-host` and installation at
 `~/.local/share/vortex-host`. Review/copy it into the account's systemd user
-configuration and explicitly enable it only after installation checks. On one
-real AMD64 development host, the exact bundle was installed under a non-root
-account with a short-lived synthetic local approval; a reboot restarted its
-keyless, observation-only service and retained start entries from multiple boots
-in the journal. This does **not** prove two-host acceptance or permit signing.
-The service unit rate-limits messages. Provisional development journald and
-rsyslog bounds passed configuration checks, but log load, production retention
-policy, firewall source restrictions, patching, independent administration,
-second-Linux-host recovery and emergency access still need host-specific
-acceptance.
+configuration and explicitly enable it only after installation checks. On both
+real AMD64 development hosts, the exact bundle was installed under a non-root
+account with short-lived synthetic local approval; real reboots restarted their
+keyless, observation-only services. The service unit rate-limits messages.
+Provisional development journald and rsyslog bounds passed configuration checks,
+but log load, production retention policy, firewall source restrictions, patching,
+independent administration and emergency access still need host-specific
+acceptance. The second Linux host restored a synthetic observation archive; this
+does **not** prove managed signing-key recovery, signer fencing or permission
+to sign.
 
 ## Managed signer protocol
 
