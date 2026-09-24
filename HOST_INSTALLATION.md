@@ -854,3 +854,37 @@ This closes the helper-signature limitation for the local reverse-route test.
 It does not establish independently administered machines or general mixed
 version compatibility; only these exact artifact hashes and operation were
 exercised in the single physical laboratory.
+
+## Two separate Linux development hosts: chain reads and candidate import
+
+The exact AMD64 test bundle `f5e24524db413588ab3b4f249c21ea0c26cb1f362c5ee68d4aa9c78360c9bc23`
+from source `aac1a66` is installed on two separate rebuilt Ubuntu hosts under a
+dedicated non-root user. Temporary loopback-only reverse tunnels let both hosts
+read the actual isolated Koinos and EVM test chains. Each passed the five opt-in
+chain acceptance tests: irreversible Koinos membership, finalized EVM membership,
+EVM transfer read, retired-identity rejection and reverse transfer read. These
+tests used separate binaries built from the unchanged runtime source.
+
+The test-only fixture generator `scripts/validator-acceptance-fixture.go` creates
+a short-lived signed validator release from an exact bundle using an ephemeral
+synthetic publisher identity. Its private key is never written to the fixture.
+On a real AMD64 Docker engine, the actual candidate checker passed all eight
+observation and negative checks with `--network none`, a read-only filesystem,
+no host mounts and non-root UID 65532. The result digest was
+`cb61f9ab75261675e396b51d475e7715c27e081cc851c02aa978a32cbbe510a8`.
+The temporary Docker installation was then removed from that host.
+
+Fresh short-lived synthetic operator approvals updated the first installation
+from sequence 2 to 3 and the second from 1 to 2. Both imported that same exact
+candidate result; their keyless loopback observation services remain active and
+`managedSigning` is false. The installed `activate` command rejected an old
+retired signer identity on each host before asking for a vault secret. A separate
+fresh installation on the second host rejected a current signer configuration
+without signed host review; `review-request` required the private host control
+records. An earlier attempt to change the main installation's policy was also
+rejected by its retained journal, which was left intact.
+
+These checks establish installed fail-closed gates and actual candidate import,
+not an installed signer session on either physical host. Host control review,
+manual unlock, distributed signing, host-loss fencing and signing-key recovery
+remain open. Both hosts are controlled by one operator and one hosting account.
