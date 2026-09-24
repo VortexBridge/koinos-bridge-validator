@@ -569,8 +569,21 @@ native AMD64 Docker engine. Fresh sequence-2 local approvals postdated that
 run; both exact-bundle installations imported the identical result and still
 reported `managedSigning: false`. The temporary engine and its newly installed
 packages, socket, bridge and firewall chains were removed. These fresh
-installations still have no host reviews, signing keys or managed journals;
-installed live-chain multi-operation drain remains untested.
+installations initially had no host reviews, signing keys or managed journals.
+Subsequently each exact installed host tool generated a review request against
+its own runtime configuration and eleven mode-0600 `SYNTHETIC_ONLY` control
+fixtures. Distinct one-off reviewer keys on the Mac signed the canonical
+requests, and independent signature verification passed. Only public keys and
+signed reviews reached the matching VPSs. These fixtures do not attest real
+host security. The one-off reviewer private-key files were deleted from the
+Mac after verification, so these reviews cannot be renewed with those keys.
+Neither fresh root has a vault or managed journal; installed
+live-chain multi-operation drain remains untested. The older first-host test
+identity still has a signed pending operation. Do not copy its vault to a fresh
+root without reconciling that journal and dual-chain fencing. New test
+identities require new chain membership and newly issued reviews because each
+review binds the runtime configuration. See the root repository's
+`implementation/evidence/2026-09-24-drain-synthetic-host-review.json`.
 
 ## Permission changes during transfer reads
 
