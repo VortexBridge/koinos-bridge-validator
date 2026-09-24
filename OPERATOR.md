@@ -780,3 +780,9 @@ go run scripts/operator-backup-fixture.go \
 It prints a fresh private fixture directory, creates synthetic stopped-validator
 state and a test-only recovery identity, and exercises `backup-configure` through
 the compiled CLI. It starts no worker or RPC and contains no production data.
+For an off-host recovery test, generate the identity on the recovery host first
+and pass only its public recipient as `--recipient age1...`. The fixture then
+does not create or copy a private recovery identity on the source host. Copy the
+resulting encrypted archive and receipt to independent storage, verify the
+ciphertext hash, and restore on a separate test host before claiming an off-host
+recovery exercise. An observation restore does not recover managed signing keys.
