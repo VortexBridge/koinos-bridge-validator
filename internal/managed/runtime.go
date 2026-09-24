@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/host"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/operator"
@@ -179,6 +180,54 @@ func locateRuntimeOperation(ctx context.Context, root string, pinned map[string]
 		return 0, err
 	}
 	return hints[id], nil
+}
+
+// RecoveryHintPreflight identifies a missing, non-authoritative locator before
+// attempting a retired-journal import. It grants no signing permission: the
+// normal reader still verifies each receipt, digest and irreversible anchor.
+// The diagnostic deliberately omits operation IDs and private host paths.
+func RecoveryHintPreflight(root, configPath string, source Journal) error {
+	if !filepath.IsAbs(root) || !filepath.IsAbs(configPath) {
+		return errors.New("absolute private recovery paths required")
+	}
+	required := []string{}
+	for id := range source.Operations {
+		if strings.HasPrefix(id, "koinos-to-evm/") {
+			required = append(required, strings.TrimPrefix(id, "koinos-to-evm/"))
+		}
+	}
+	if len(required) == 0 {
+		return nil
+	}
+	raw, err := worker.ReadPrivateFile(configPath, 128<<10)
+	var cfg RuntimeConfig
+	if err != nil || host.JSON(raw, &cfg) != nil || cfg.Schema != 1 || len(cfg.BlockHints) > 4096 {
+		return errors.New("invalid managed runtime configuration")
+	}
+	missing := false
+	for _, id := range required {
+		if cfg.BlockHints[id] == 0 {
+			missing = true
+			break
+		}
+	}
+	if !missing {
+		return nil
+	}
+	raw, err = worker.ReadPrivateFile(filepath.Join(root, "operation-hints.json"), 512<<10)
+	if err != nil {
+		return errors.New("source receipt locator unavailable; restore owner-only operation-hints.json and retry")
+	}
+	hints, err := decodeOperationHints(raw)
+	if err != nil {
+		return errors.New("source receipt locator unavailable; restore owner-only operation-hints.json and retry")
+	}
+	for _, id := range required {
+		if cfg.BlockHints[id] == 0 && hints[id] == 0 {
+			return errors.New("source receipt locator unavailable; restore owner-only operation-hints.json and retry")
+		}
+	}
+	return nil
 }
 
 func decodeOperationHints(raw []byte) (map[string]uint64, error) {

@@ -170,6 +170,11 @@ func run() error {
 		if e = host.JSON(raw, &source); e != nil {
 			return e
 		}
+		if source.Schema == 1 && source.PolicySHA256 == managed.Digest(previous) {
+			if e = managed.RecoveryHintPreflight(*root, *config, source); e != nil {
+				return e
+			}
+		}
 		session, _, e := managed.PrepareRuntime(*root, *config, *trust)
 		if e != nil {
 			return e

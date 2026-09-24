@@ -1,29 +1,21 @@
 # Linux host bundle and managed signer boundary (Prompt 03, in progress)
 
-Prompt 03 remains incomplete. The packaged host now supports private observation,
+Prompt 03 remains incomplete. The packaged host supports private observation,
 manual managed activation against isolated development chains, both transfer
 routes, fenced replacement after dual-identity retirement, and same-host artifact
-upgrades preserving signatures. These paths have been exercised with synthetic
-keys and actual chain processes on one physical Docker host. Public signing stays
+upgrades preserving signatures. The exact installed runtime has signed in both
+directions on two separate development hosts. A synthetic abrupt signer-process
+loss on the first was recovered with a fresh vault on the second after finalized
+rotation on both isolated chains. The first machine remained online. A temporary
+encrypted vault copy was decrypted for public-identity inspection on the other
+host; durable off-host custody is still undecided.
+
+The persistent services remain keyless and loopback-only after real reboots.
+Both hosts share one operator and hosting account, and their signed host reviews
+are marked `SYNTHETIC_ONLY`. They do not establish independent operators or
+accepted server security. A whole-host outage, real host controls, durable key
+recovery and independent governance remain acceptance work. Public signing stays
 disabled; never bypass this boundary through the legacy signer.
-
-Two clean development hosts now run the same exact test-only approved artifact
-as keyless observation services after real reboots. Native non-root Linux
-synthetic signing tests passed independently on each. An encrypted synthetic
-observation backup restored from the first host on a separate Mac and on the
-second Linux host. The remaining acceptance is distributed **installed-runtime**
-signing, host-loss fencing and recovery, plus accepted host security and durable
-backup custody. Two containers are not two hosts, and two VPSs in one operator's
-account do not establish independent operators. Production-chain authorization
-is a separate decision.
-
-Both real AMD64 development hosts now run the refreshed bundle as keyless,
-loopback-only user services after reboots; the first also passed a compatible
-update. A stopped synthetic observation worker on the first produced an encrypted
-archive that was copied off-host and restored on a separate Mac and the second
-Linux host, including a repeat Mac restore after the source fixture was removed.
-The second-host restore required explicit configuration review before enabling
-observation. This is not a signing-key recovery or cross-host signer test.
 
 Later milestone sections retain dated laboratory evidence and its limitations.
 The current status above supersedes their historical statements of pending work.
@@ -663,7 +655,7 @@ or fenced replacement acceptance.
 
 ## Retired-identity journal migration
 
-`vortex-host recover-retired` now provides a locked migration path when a lost
+`vortex-host recover-retired` provides a locked migration path when a lost
 host is replaced with new identities on both chains. This closes a gap in which
 `Open` correctly rejected the old policy digest but no supported import path
 existed. It does not authorize reusing the old keys on a second host.
@@ -682,6 +674,13 @@ vortex-host --root /private/replacement --config /private/replacement/runtime.js
   --previous-policy /private/backup/policy.json \
   --previous-journal /private/backup/session.json recover-retired
 ```
+
+For retained Koinos-to-EVM operations, restore the owner-only
+`operation-hints.json` alongside the public journal, unless every locator is
+pinned in the reviewed runtime configuration. The preflight gives an actionable
+missing-locator error before import. These hints do not authorize recovery or
+signing: the normal reader still verifies the source receipt, digest and
+irreversible anchor on the live isolated chains.
 
 The command holds the installation lock, accepts only a fresh locked session,
 checks source policy integrity and retained signatures, verifies finalized
