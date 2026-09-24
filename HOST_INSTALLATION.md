@@ -6,16 +6,20 @@ routes, fenced replacement after dual-identity retirement, and same-host artifac
 upgrades preserving signatures. The exact installed runtime has signed in both
 directions on two separate development hosts. A synthetic abrupt signer-process
 loss on the first was recovered with a fresh vault on the second after finalized
-rotation on both isolated chains. The first machine remained online. A temporary
-encrypted vault copy was decrypted for public-identity inspection on the other
-host; durable off-host custody is still undecided.
+rotation on both isolated chains. A later real provider hard power-off made the
+first VPS unavailable with a signed pending operation in its locked journal.
+The second restored its public state from a separate local disk after finalized
+dual-chain rotation, signed with a new encrypted vault and completed delivery.
+The old VPS restarted and refused activation before unlock. Its signer had been
+stopped before the hard power-off, and both current completion signatures came
+from the recovery VPS.
 
 The persistent services remain keyless and loopback-only after real reboots.
 Both hosts share one operator and hosting account, and their signed host reviews
 are marked `SYNTHETIC_ONLY`. They do not establish independent operators or
-accepted server security. A whole-host outage, real host controls, durable key
-recovery and independent governance remain acceptance work. Public signing stays
-disabled; never bypass this boundary through the legacy signer.
+accepted server security. Active-signer power loss, independent recovery control,
+durable key custody and independent governance remain acceptance work. Public
+signing stays disabled; never bypass this boundary through the legacy signer.
 
 Later milestone sections retain dated laboratory evidence and its limitations.
 The current status above supersedes their historical statements of pending work.
@@ -458,19 +462,19 @@ local terminal evidence, not the complete installed CLI lifecycle on two hosts.
 
 ## Remaining acceptance work (must not be skipped)
 
-1. Run the complete **installed-runtime** manual-unlock/activate/stop/crash/
-   recovery/replacement exercise across the two real development hosts. Both
-   currently run the same exact approved test artifact in keyless observation;
-   separate synthetic Linux test binaries pass on each, while the earlier
-   installed signer laboratory used one physical Docker host.
-2. Accept actual host controls, including administrator recovery, firewall source
-   restrictions and emergency access. Boot-time systemd and provisional log
-   limits passed on both hosts, and encrypted observation state restored across
-   them; synthetic reviewer records do not prove these controls or signing-key
-   recovery.
-3. Verify logs, exports, backups and retained disks after the distributed signer
-   exercise. Current known-secret scans cover selected test logs, user journals
-   and ciphertext, not all persistence layers.
+1. Repeat the provider hard power-off while the signer is still active, then
+   recover on a host with a genuinely separate administrator and provider
+   control domain. The two-host installed signing, process crash/replacement
+   and stopped-signer pending-transfer power-off exercises have passed within
+   one owner's development account.
+2. Accept actual host controls, including administrator recovery, firewall
+   source restrictions, emergency access, monitoring and a durable encrypted
+   backup destination with separate recovery-secret custody. Synthetic reviewer
+   records and the single unencrypted external test disk do not prove these.
+3. Extend secret and recovery checks to retained disks, provider snapshots,
+   exports and realistic operational retention. Current known-secret scans cover
+   selected installation files, process arguments, journals and ciphertext;
+   they are not forensic proof.
 4. Refresh reproducibility and target checks for any further artifact change
    before independent-host acceptance. Keep public deployments observation-only.
 
@@ -804,9 +808,44 @@ unactivated installation was disabled with its empty state preserved; its
 encrypted vault moved into a new private installation with a corrected policy.
 No signed journal was deleted to force import. A copy of that vault was decrypted
 for public-identity verification in the other host's tmpfs and removed there.
-These synthetic hosts still share one owner and cloud account. Whole-host outage,
-real host control approval, durable off-host custody and production authorization
-remain separate requirements.
+These synthetic hosts still share one owner and cloud account. At this checkpoint,
+whole-host outage had not yet been exercised; real host control approval, durable
+off-host custody and production authorization remained separate requirements.
+
+### Provider hard power-off with a signed pending transfer
+
+The exact `a922df4` AMD64 bundle was installed on both development VPSs. The
+first host manually signed another isolated EVM deposit, then stopped locked with
+five public operations, one signed and pending. Its encrypted synthetic vault,
+journal, policy and receipt hints were copied to a separate local disk and checked
+by hash on the other VPS. Hetzner's hard power-off then made the first VPS
+unreachable; the signed journal backup was copied **from that disk** while the
+source host remained off.
+
+A fresh synthetic vault and exact-bundle installation on the second VPS refused
+`recover-retired` before rotation and after EVM-only rotation, without changing
+its empty journal. Once the old identities were removed and the new identities
+added on both isolated contracts, Koinos finality reached the rotation and the
+pinned replica matched its state root. Recovery imported all five public
+operations into a locked journal with one pending and **no retired signatures**.
+The replacement and the remaining current signer manually unlocked in turn,
+signed the pending operation and stopped. The Koinos destination rejected the
+retired signature paired with a current signer, accepted the current pair at
+block 939, and became irreversible with matching replica state. Both current
+installations restarted, reconciled completion and returned their original
+signatures. The first VPS was powered on again; its vault and journal hashes
+were unchanged, its keyless observation service restarted, and its retired
+installation refused activation before requesting a passphrase. The temporary
+restore and RPC tunnels were removed.
+
+The source signer had stopped before the provider cut. Both accepted signatures
+after recovery were produced on the **same second VPS**. The disk, VPSs and
+synthetic reviewer share one owner; the disk itself is unencrypted, though the
+test vault is encrypted. This validates a physical-host outage and software
+fencing for a signed pending transfer, not active-signer power loss,
+independently administered quorum or accepted production backup custody. The
+sanitized evidence is in the root audit repository's
+`implementation/evidence/2026-09-24-provider-host-loss-recovery.json`.
 
 ## Mutable, non-authoritative Koinos receipt hints
 
