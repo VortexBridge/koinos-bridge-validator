@@ -893,6 +893,21 @@ retention and separate recovery-secret custody remain open. Sanitized
 evidence is in the root audit repository at
 `implementation/evidence/2026-09-24-active-signer-provider-loss-recovery.json`.
 
+### Uninstall while a managed signer is active
+
+The installed host command holds `host.lock` throughout manual activation.
+On the second development VPS, a separate `uninstall` invocation while its
+synthetic signer was active failed immediately with `resource is already owned
+by another local process`. The installation record, encrypted vault and
+public journal were unchanged. An interactive `stop` returned the signer to
+locked state with its completed signature intact. In a separate exercise, a
+retired signer was uninstalled twice after stopping; its nonempty journal and
+vault remained byte-identical. Operators must stop and verify process exit before
+uninstalling. This local exclusion does not drain a multi-operation backlog
+or fence a signer on another host. Sanitized evidence is in
+`implementation/evidence/2026-09-24-running-signer-uninstall-gate.json` in
+the root audit repository.
+
 ## Mutable, non-authoritative Koinos receipt hints
 
 The runtime checks pinned `blockHints` first, then reads the private installation

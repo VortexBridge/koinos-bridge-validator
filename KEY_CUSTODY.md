@@ -3,8 +3,10 @@
 This branch provides `vortex-keys` and an encrypted-vault option for the existing
 standalone validator. Use these commands on a reviewed Linux host as the operator's
 dedicated non-root service user. The operator API and hosted interface never
-request the vault password or open the vault. Managed signing startup, unattended
-unlock integration and cross-host fencing remain separate work.
+request the vault password or open the vault. The separate installed managed
+signer is described in `HOST_INSTALLATION.md`; it has synthetic manual-unlock
+and fenced-replacement evidence. Unattended managed unlock is not approved,
+and public-chain signing remains disabled.
 
 ## Prepare the host
 
@@ -79,6 +81,35 @@ This verifies decryption and prints public data only; it never exports plaintext
 keys. Copy the encrypted vault into operator-owned recovery storage and verify
 the copied file with `inspect` in an isolated recovery exercise. A lost passphrase
 and all recovery copies mean the vault cannot recover the keys.
+
+## Managed signer backup boundary
+
+The observation-worker backup deliberately excludes signing keys. A managed
+signer recovery needs its encrypted `keys.vault`, public
+`managed-session/session.json`, the exact public policy derived from the
+reviewed runtime, and any public Koinos receipt-location hints. Back up the
+runtime and artifact digests needed to verify that policy. Do not reuse a
+source host's signed host review or local release approval on a replacement
+machine.
+
+The vault is AES-GCM encrypted, but the journal and runtime metadata are
+public only in the cryptographic sense: they can reveal operational activity.
+For a real operator, wrap the complete recovery package in reviewed
+client-side encryption **before** writing it to off-host storage. Keep the
+decryption identity or passphrase separately from the ciphertext and from
+the source host. Record a readback hash, retention schedule and restore test.
+The destination, redundancy, recovery-secret custody and retention have not
+yet been accepted for the pilot.
+
+The active-host-loss exercise copied a consistent signed journal after the
+signature was persisted, then recovered it from a separate local disk after
+dual-chain retirement. That manual copy does not guarantee that a later
+operation will be in the latest backup. Until a durable freshness mechanism
+is accepted and tested, treat backup age and any unrecorded pending operation
+as explicit recovery limits. A replacement uses fresh signing identities,
+imports only verified public operations without old signatures, and remains
+locked until both old identities are retired on the reviewed contracts and
+manual unlock succeeds.
 
 ## Configure and unlock the validator
 
