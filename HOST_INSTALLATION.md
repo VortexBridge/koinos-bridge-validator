@@ -60,6 +60,12 @@ Verify the source tree is clean before running this command. Transfer
 only the bundle, signed release, public trust and local approval to the test
 host. Keep each file owner-only; verify the bundle hash again after transfer.
 Do not transfer a real publisher private key or any validator signing key.
+For a compatible update of an existing synthetic installation, pass the same
+instance and `--sequence 2` (then increment for subsequent updates). A new
+test-only publisher and approval are generated for the new exact archive. Stop
+the user service before installation, retain the old release and state, and
+replace its verified launcher only after the new installation passes `doctor`.
+This fixture does not authorize an incompatible migration or public signing.
 
 ## Install, inspect, upgrade and remove
 

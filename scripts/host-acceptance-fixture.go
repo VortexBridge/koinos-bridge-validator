@@ -46,12 +46,13 @@ func run() error {
 	out := flag.String("out", "", "new private output directory")
 	instance := flag.String("instance", "", "synthetic instance name")
 	commit := flag.String("source-commit", "", "reviewed 40-character source commit")
+	sequence := flag.Uint64("sequence", 1, "synthetic release sequence; increment for an upgrade")
 	flag.Parse()
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		return errors.New("unsupported fixture platform")
 	}
-	if !filepath.IsAbs(*bundlePath) || !filepath.IsAbs(*out) || !strings.HasPrefix(*instance, "synthetic-") {
-		return errors.New("absolute bundle/output paths and synthetic- instance required")
+	if !filepath.IsAbs(*bundlePath) || !filepath.IsAbs(*out) || !strings.HasPrefix(*instance, "synthetic-") || *sequence == 0 {
+		return errors.New("absolute bundle/output paths, synthetic- instance and positive sequence required")
 	}
 	info, err := os.Lstat(*bundlePath)
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 256<<20 {
@@ -68,7 +69,7 @@ func run() error {
 		ID:            "synthetic-host-acceptance",
 		Component:     "operator",
 		Version:       "0.3.0",
-		Sequence:      1,
+		Sequence:      *sequence,
 		Channel:       "candidate",
 		SourceCommit:  *commit,
 		CreatedAt:     now.Add(-time.Minute).Format(time.RFC3339),
@@ -133,7 +134,7 @@ func run() error {
 	}
 	return json.NewEncoder(os.Stdout).Encode(map[string]any{
 		"instance": *instance, "artifactSha256": m.Artifacts[0].SHA256,
-		"releaseDigest": verified.Digest, "approvalExpiresAt": approval.WindowEnd,
+		"releaseDigest": verified.Digest, "sequence": m.Sequence, "approvalExpiresAt": approval.WindowEnd,
 		"notice": "synthetic host acceptance only; no production publisher or signer key",
 	})
 }
