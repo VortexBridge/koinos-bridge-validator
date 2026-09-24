@@ -693,8 +693,9 @@ requested. Subsequent interactive activation repeats all gates and reconciliatio
 
 Automated coverage includes partial retirement, retirement changing during
 import, invalid signatures, changed operations, completion regression, checkpoint
-failure and refusing a second import. Installed-artifact acceptance of this new
-command and full independently hosted replacement remain outstanding.
+failure and refusing a second import. Installed-artifact acceptance first passed
+in the isolated development laboratory below; the later two-host exercise is
+recorded separately. Independent operator control remains outstanding.
 
 ## Installed retired-key recovery acceptance (development laboratory)
 
@@ -722,7 +723,57 @@ checks passed; the retired policy was rejected against finalized memberships.
 These containers share one physical Docker host and synthetic control reviews.
 This proves the installed recovery path on actual development chains, not two
 independently administered hosts or complete secrecy/backup acceptance. Reverse
-route and independent-host lifecycle exercises remain required.
+route and separate physical-host lifecycle exercises are recorded below; real
+operator independence remains required.
+
+### Two physical development hosts, synthetic process-loss replacement
+
+Validator commit `d4e2aae` fixed an activation deadline exposed by the slower
+second host: each live verification phase has a separate ten-second limit, and
+reconciliation has its own bounded limit. The AMD64 bundle SHA-256
+`ded4467ae72335ef7fc89a0c7069100394b704b6bc184407418368bc7f7ffb4f`
+was built twice identically and installed on both hosts under a non-root test
+account. Each installation manually unlocked an encrypted synthetic vault,
+signed actual isolated-chain transfers in both directions, and after restart
+reconciled completion with exactly its original signature. Both destination
+contracts rejected one signature and accepted two. The persistent keyless
+operator services stayed active and loopback-only.
+
+A new EVM deposit was signed by the first installed host while still pending.
+Only that test signer process was then killed with SIGKILL; its journal retained
+an active state and the signed intent. A separate fresh installation on the
+second host generated a new synthetic vault. `recover-retired` refused before
+rotation and after EVM-only rotation. The old identities were removed and the
+new identities added on both isolated contracts; the Koinos changes became
+irreversible and the pinned replica matched. The old host's installed activation
+failed before unlock. The replacement imported all three public intents into a
+locked journal without carrying over retired signatures. One completed reverse
+operation required its non-authoritative source-block hint to be restored first;
+the hint only locates the receipt, which the runtime checks independently.
+
+After manual unlock, the replacement and remaining current synthetic signer
+signed the pending operation. The Koinos contract rejected the retired signature
+even when paired with a current signer, then accepted the current and replacement
+signatures at block 691. The completion became irreversible, the replica matched,
+and both signers restarted and returned their original signatures. An encrypted
+copy of the new vault was taken off the second host; a temporary restore in the
+first host's `/run` tmpfs decrypted to the expected public identities without
+activating a second copy. The tmpfs copy was removed. A bounded scan found no
+known synthetic passphrase in installation files, relevant system journals,
+process arguments or the encrypted off-host vault.
+
+This was an abrupt **process-loss simulation**, not a provider power-off or
+independent-operator exercise. Both machines remain controlled by one person and
+one hosting account. All signed host reviews were explicitly marked
+`SYNTHETIC_ONLY`, so they do not attest real server security. The temporary
+encrypted copy does not settle durable backup storage, retention or custody.
+Do not treat this exercise as public-chain or production signing authorization.
+
+The replacement restore exposed two setup dependencies worth checking in the
+runbook: create a writable owner-only same-user signer-lock directory before
+unlock, and include non-authoritative receipt hints with the public journal
+backup when reverse-route operations exist. Missing either input must fail closed;
+neither should be bypassed by deleting the journal or weakening membership checks.
 
 ## Mutable, non-authoritative Koinos receipt hints
 
