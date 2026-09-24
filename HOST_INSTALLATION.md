@@ -119,12 +119,15 @@ key material or resets a database.
 The supplied user-service template assumes the independently verified launcher
 at `~/.local/bin/vortex-host` and installation at
 `~/.local/share/vortex-host`. Review/copy it into the account's systemd user
-configuration and explicitly enable it only after installation checks. This
-milestone has exercised foreground supervision in containers, **not boot-time
-systemd acceptance**. Journald owns log retention; the unit rate-limits messages.
-Measured journal size/retention, firewall, patching, independent administration,
-backups and emergency access remain host acceptance controls, not facts inferred
-from a successful install.
+configuration and explicitly enable it only after installation checks. On one
+real AMD64 development host, the exact bundle was installed under a non-root
+account with a short-lived synthetic local approval; a reboot restarted its
+keyless, observation-only service and
+retained start entries from both boots in the journal. This does **not** prove
+two-host acceptance or permit signing. Journald owns log retention; the unit
+rate-limits messages. The retention policy, firewall source restrictions,
+patching, independent administration, encrypted off-host restore and emergency
+access still need host-specific acceptance.
 
 ## Managed signer protocol
 
