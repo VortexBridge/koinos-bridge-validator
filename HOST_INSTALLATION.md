@@ -12,6 +12,13 @@ approved artifact, boot-time service/log-retention checks and operational backup
 and secrecy evidence. Two containers are not two hosts. Production operator
 independence and production-chain authorization are separate decisions.
 
+One real AMD64 development host now runs the refreshed bundle as a keyless,
+loopback-only user service after a compatible update and reboot. A stopped
+synthetic observation worker on that host produced an encrypted archive that was
+copied off-host and restored on a separate Mac, including a repeat restore after
+the source fixture was removed. This is not a second-Linux-host or signing-key
+recovery test.
+
 Later milestone sections retain dated laboratory evidence and its limitations.
 The current status above supersedes their historical statements of pending work.
 
@@ -128,12 +135,13 @@ at `~/.local/bin/vortex-host` and installation at
 configuration and explicitly enable it only after installation checks. On one
 real AMD64 development host, the exact bundle was installed under a non-root
 account with a short-lived synthetic local approval; a reboot restarted its
-keyless, observation-only service and
-retained start entries from both boots in the journal. This does **not** prove
-two-host acceptance or permit signing. Journald owns log retention; the unit
-rate-limits messages. The retention policy, firewall source restrictions,
-patching, independent administration, encrypted off-host restore and emergency
-access still need host-specific acceptance.
+keyless, observation-only service and retained start entries from multiple boots
+in the journal. This does **not** prove two-host acceptance or permit signing.
+The service unit rate-limits messages. Provisional development journald and
+rsyslog bounds passed configuration checks, but log load, production retention
+policy, firewall source restrictions, patching, independent administration,
+second-Linux-host recovery and emergency access still need host-specific
+acceptance.
 
 ## Managed signer protocol
 
