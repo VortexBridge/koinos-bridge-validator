@@ -585,6 +585,21 @@ identities require new chain membership and newly issued reviews because each
 review binds the runtime configuration. See the root repository's
 `implementation/evidence/2026-09-24-drain-synthetic-host-review.json`.
 
+A subsequent read-only preflight showed that the fresh first-host runtime's
+configured identities had already been retired on **both** isolated contracts;
+the second-host identities were current. With temporary loopback-only chain
+tunnels, the exact installed first-host `activate` command exited before any
+secret prompt. It reported a generic `live activation evidence unavailable`
+error, so the command itself does not identify the exact verifier stage.
+It created only a locked, zero-operation journal and no vault. The old
+first-host installation still has a **separate signed pending operation**.
+Preserve both journals, use a new private installation root and new synthetic
+identities for the next first-host test, and require finalized dual-chain
+membership and a newly issued runtime-bound review. The tunnels and proxy were
+removed; the keyless observation service remained active. See
+`implementation/evidence/2026-09-24-drain-identity-preflight.json` in the root
+repository.
+
 ## Permission changes during transfer reads
 
 Each signing request rechecks live readiness after reconstructing the transfer,
