@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,6 +20,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/keyvault"
+	"github.com/koinos-bridge/koinos-bridge-validator/internal/managed"
 	"github.com/koinos-bridge/koinos-bridge-validator/internal/operator"
 )
 
@@ -60,6 +66,14 @@ func run() error {
 	waveResultFile := flags.String("wave-result-file", "", "private signed maintenance wave-result JSON")
 	waveResultID := flags.String("wave-result-id", "", "unique lowercase local wave-result ID")
 	progressID := flags.String("progress-id", "", "completed local signing-progress window ID")
+	governanceFile := flags.String("governance-file", "", "absolute portable governance proposal JSON")
+	governanceProfile := flags.String("governance-profile", "", "exact local deployment profile to sign")
+	signingVault := flags.String("signing-vault", "", "absolute encrypted validator signing vault")
+	expectedEVM := flags.String("expected-evm-signer", "", "reviewed EVM validator identity pinned to the vault")
+	expectedKoinos := flags.String("expected-koinos-signer", "", "reviewed Koinos validator identity pinned to the vault")
+	unlockFD := flags.Int("unlock-passphrase-fd", -1, "inherited pipe for the vault passphrase; omitted for a hidden terminal prompt")
+	koinosReplica := flags.String("koinos-finality-replica", "", "private Koinos replica pinned to the live irreversible block")
+	koinosMembershipSeed := flags.String("koinos-membership-seed", "", "one reviewed current Koinos validator address used to enumerate membership")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -73,14 +87,21 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results, governance-sign")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+	if (*koinosReplica == "") != (*koinosMembershipSeed == "") {
+		return errors.New("Koinos finalized governance reads require both --koinos-finality-replica and --koinos-membership-seed")
+	}
+	observe := operator.ObservationProvider(operator.Observe)
+	if *koinosReplica != "" {
+		observe = managed.GovernanceObservationProvider(*koinosReplica, *koinosMembershipSeed)
+	}
 	if command == "instance-create" {
 		created, err := s.CreateInstance(*instance)
 		if err != nil {
@@ -100,6 +121,57 @@ func run() error {
 			return errors.New("unknown local instance; create it using instance-create first")
 		}
 		s = selected
+	}
+	if command == "governance-sign" {
+		if *expectedEVM == "" || *expectedKoinos == "" || *signingVault == "" || *governanceProfile == "" {
+			return errors.New("governance signing requires the proposal, exact profile, encrypted vault and both reviewed signer identities")
+		}
+		proposal, err := operator.ReadGovernanceProposal(*governanceFile)
+		if err != nil {
+			return err
+		}
+		binding, ok := s.Binding(*governanceProfile)
+		if !ok {
+			return errors.New("unknown governance deployment profile")
+		}
+		signer := *expectedEVM
+		if binding.Profile.Family == "koinos" {
+			signer = *expectedKoinos
+		}
+		route, err := s.ReviewGovernanceSigning(context.Background(), proposal, *governanceProfile, signer, observe, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		keys, _, err := keyvault.Unlock(*signingVault, *expectedEVM, *expectedKoinos, func() ([]byte, error) { return keyvault.ReadSecret(*unlockFD, "Validator vault passphrase") })
+		if err != nil {
+			return err
+		}
+		defer keys.Close()
+		digest, _ := hex.DecodeString(route.Payload.Digest)
+		var signature string
+		if route.Profile.Family == "evm" {
+			raw, err := crypto.Sign(digest, keys.EVM)
+			if err != nil {
+				return errors.New("cannot sign reviewed EVM governance payload")
+			}
+			raw[64] += 27
+			signature = "0x" + hex.EncodeToString(raw)
+			keyvault.Clear(raw)
+		} else {
+			key, _ := btcec.PrivKeyFromBytes(btcec.S256(), keys.Koinos)
+			raw, err := btcec.SignCompact(btcec.S256(), key, digest, true)
+			if err != nil {
+				return errors.New("cannot sign reviewed Koinos governance payload")
+			}
+			signature = base64.URLEncoding.EncodeToString(raw)
+			keyvault.Clear(raw)
+		}
+		envelope, err := operator.GovernanceSignature(route, signature)
+		if err != nil {
+			return err
+		}
+		envelope.ProposalID = proposal.ID
+		return json.NewEncoder(os.Stdout).Encode(envelope)
 	}
 	if command == "participation-status" {
 		return json.NewEncoder(os.Stdout).Encode(s.ParticipationState(time.Now().UTC()))
@@ -331,6 +403,7 @@ func run() error {
 	}
 	defer l.Close()
 	api := operator.NewServer(s, token, l.Addr().String(), strings.Split(*origins, ","))
+	api.SetObservationProvider(observe)
 	server := &http.Server{Handler: api, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

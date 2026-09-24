@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -20,10 +21,17 @@ type Server struct {
 	observations map[string]Observation
 	reads        chan struct{}
 	instances    map[string]*Server
+	observe      ObservationProvider
+	governance   GovernanceExecutor
 }
 
+// ObservationProvider supplies fresh chain state. The default provider is the
+// bounded read-only observer; command composition may replace it before Serve
+// starts when a stronger finalized adapter is available.
+type ObservationProvider func(context.Context, Binding) Observation
+
 func NewServer(store *Store, token, host string, origins []string) *Server {
-	s := &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2), instances: map[string]*Server{}}
+	s := &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2), instances: map[string]*Server{}, observe: Observe}
 	for _, entry := range store.LocalInstances() {
 		if entry.ID != "default" {
 			child, _ := store.LocalInstance(entry.ID)
@@ -31,6 +39,18 @@ func NewServer(store *Store, token, host string, origins []string) *Server {
 		}
 	}
 	return s
+}
+
+// SetObservationProvider installs one provider for the root and every local
+// instance. Call it during process setup, before the HTTP server starts.
+func (s *Server) SetObservationProvider(provider ObservationProvider) {
+	if provider == nil {
+		return
+	}
+	s.observe = provider
+	for _, child := range s.instances {
+		child.SetObservationProvider(provider)
+	}
 }
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -348,7 +368,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 202, status)
 	case r.URL.Path == "/v1/capabilities" && r.Method == "GET":
-		writeJSON(w, 200, map[string]interface{}{"families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
+		writeJSON(w, 200, map[string]interface{}{"families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "governanceActions": []string{"set_pause"}, "governanceWorkflowEnabled": true, "governanceSubmissionEnabled": s.governance != nil, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
 	case r.URL.Path == "/v1/updates" && r.Method == "GET":
 		trust, err := s.Store.ReleaseTrust()
 		publishers := []string{}
@@ -474,7 +494,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			fail(w, 404, "unknown deployment profile")
 			return
 		}
-		observation := Observe(r.Context(), binding)
+		observation := s.observe(r.Context(), binding)
 		observation.ConfigurationRevision = revision
 		// A read finishing after a config change must not overwrite fresh context.
 		current, ok := s.Store.Binding(id)
@@ -486,6 +506,87 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		s.observations[id] = observation
 		s.mu.Unlock()
 		writeJSON(w, 200, observation)
+	case r.URL.Path == "/v1/governance" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.GovernanceInventory(s.governance != nil, time.Now().UTC()))
+	case r.URL.Path == "/v1/governance/proposals" && r.Method == "POST":
+		var req CreateGovernanceProposal
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		proposal, err := s.Store.CreateGovernance(r.Context(), req, s.observe, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, proposal)
+	case r.URL.Path == "/v1/governance/import" && r.Method == "POST":
+		var proposal GovernanceProposal
+		if err := decode(w, r, &proposal); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		imported, err := s.Store.ImportGovernance(r.Context(), proposal, s.observe, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, imported)
+	case r.URL.Path == "/v1/governance/signatures" && r.Method == "POST":
+		var envelope GovernanceSignatureEnvelope
+		if err := decode(w, r, &envelope); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		proposal, err := s.Store.AddGovernanceSignature(r.Context(), envelope, s.observe, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, proposal)
+	case r.URL.Path == "/v1/governance/submit" && r.Method == "POST":
+		var req struct {
+			ProposalID string `json:"proposalId"`
+			ProfileID  string `json:"profileId"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		proposal, err := s.Store.SubmitGovernance(r.Context(), req.ProposalID, req.ProfileID, s.observe, s.governance, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, proposal)
+	case r.URL.Path == "/v1/governance/reconcile" && r.Method == "POST":
+		var req struct {
+			ProposalID string `json:"proposalId"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		proposal, err := s.Store.ReconcileGovernance(r.Context(), req.ProposalID, s.governance, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, proposal)
+	case r.URL.Path == "/v1/governance/revalidate" && r.Method == "POST":
+		var req struct {
+			ProposalID string `json:"proposalId"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		proposal, err := s.Store.RevalidateGovernance(r.Context(), req.ProposalID, s.observe, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, proposal)
 	case r.URL.Path == "/v1/governance/encode" && r.Method == "POST":
 		var req struct {
 			ProfileID string `json:"profileId"`

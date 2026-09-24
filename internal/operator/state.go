@@ -49,6 +49,7 @@ func strictJSON(b []byte, v interface{}) error {
 
 type Store struct {
 	backupMu     sync.Mutex
+	governanceMu sync.Mutex
 	incidentMu   sync.Mutex
 	backupWG     sync.WaitGroup
 	backupCancel context.CancelFunc

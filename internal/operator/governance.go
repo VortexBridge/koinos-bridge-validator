@@ -212,15 +212,29 @@ func RecoverSigner(p Profile, payload Payload, signature string) (string, error)
 // ValidateApprovals takes a fresh membership/nonce snapshot from the local
 // chain adapter, never the membership list embedded by a proposal coordinator.
 func ValidateApprovals(p Profile, payload Payload, signatures []string, members []string, nonce string, now time.Time) ([]string, error) {
+	signers, ready, err := CheckApprovals(p, payload, signatures, members, nonce, now)
+	if err != nil {
+		return nil, err
+	}
+	if !ready {
+		return signers, errors.New("quorum not met")
+	}
+	return signers, nil
+}
+
+// CheckApprovals validates every supplied signature against a fresh caller-
+// supplied membership and nonce. It reports a structurally valid partial set
+// without upgrading it to quorum authority.
+func CheckApprovals(p Profile, payload Payload, signatures []string, members []string, nonce string, now time.Time) ([]string, bool, error) {
 	if payload.Action.Nonce != nonce {
-		return nil, errors.New("stale nonce")
+		return nil, false, errors.New("stale nonce")
 	}
 	expiry, err := unsigned(payload.Action.Expiration, 64)
 	if err != nil || now.UnixMilli() < 0 || expiry.Cmp(big.NewInt(now.UnixMilli())) < 0 {
-		return nil, errors.New("expired proposal")
+		return nil, false, errors.New("expired proposal")
 	}
 	if len(members) == 0 {
-		return nil, errors.New("no active validators")
+		return nil, false, errors.New("no active validators")
 	}
 	normalize := func(s string) string {
 		if p.Family == "evm" {
@@ -231,11 +245,11 @@ func ValidateApprovals(p Profile, payload Payload, signatures []string, members 
 	allowed := map[string]bool{}
 	for _, member := range members {
 		if _, err := addressBytes(p.Family, member); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		key := normalize(member)
 		if allowed[key] {
-			return nil, errors.New("duplicate membership entry")
+			return nil, false, errors.New("duplicate membership entry")
 		}
 		allowed[key] = true
 	}
@@ -244,20 +258,17 @@ func ValidateApprovals(p Profile, payload Payload, signatures []string, members 
 	for _, sig := range signatures {
 		signer, err := RecoverSigner(p, payload, sig)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		key := normalize(signer)
 		if !allowed[key] {
-			return nil, errors.New("signature is not from an active validator")
+			return nil, false, errors.New("signature is not from an active validator")
 		}
 		if seen[key] {
-			return nil, errors.New("duplicate signer")
+			return nil, false, errors.New("duplicate signer")
 		}
 		seen[key] = true
 		signers = append(signers, signer)
 	}
-	if len(signers) < Quorum(len(members)) {
-		return signers, errors.New("quorum not met")
-	}
-	return signers, nil
+	return signers, len(signers) >= Quorum(len(members)), nil
 }

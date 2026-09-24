@@ -1186,3 +1186,65 @@ These checks establish installed fail-closed gates and actual candidate import,
 not an installed signer session on either physical host. Host control review,
 manual unlock, distributed signing, host-loss fencing and signing-key recovery
 remain open. Both hosts are controlled by one operator and one hosting account.
+
+## Portable pause and resume governance
+
+The loopback operator service can create one paired `set_pause` proposal for a
+reviewed local EVM deployment and a reviewed local Koinos deployment. The
+proposal contains two canonical payloads, because each contract has its own
+domain, nonce and validator membership. Export the complete proposal JSON from
+the Proposals page and transfer that public file to each validator through a
+reviewed channel. Coordination does not require a shared database.
+
+Koinos governance reads require a separate read replica stopped at the live
+node's current irreversible block and one current validator address as a
+membership-enumeration seed. Start the operator service with both inputs. Use a
+loopback replica when possible and never embed credentials in its URL.
+
+```sh
+vortex-operator \
+  --data /private/operator \
+  --koinos-finality-replica http://127.0.0.1:18082 \
+  --koinos-membership-seed KOINOS_VALIDATOR_ADDRESS \
+  serve
+```
+
+Each validator reviews and signs the exported proposal in a protected terminal.
+All flags precede the command. The tool first reconstructs the canonical
+payload from the local reviewed deployment and fresh finalized chain state. It
+checks the current nonce, expiry, membership, contract code and signer identity
+before asking to unlock the encrypted vault. It never accepts an arbitrary hash.
+
+```sh
+vortex-operator \
+  --data /private/operator \
+  --governance-file /private/review/pause-proposal.json \
+  --governance-profile local-koinos \
+  --signing-vault /private/validator/keys.vault \
+  --expected-evm-signer EVM_VALIDATOR_ADDRESS \
+  --expected-koinos-signer KOINOS_VALIDATOR_ADDRESS \
+  --koinos-finality-replica http://127.0.0.1:18082 \
+  --koinos-membership-seed KOINOS_VALIDATOR_ADDRESS \
+  governance-sign
+```
+
+Omit the two Koinos finality flags when signing an EVM route. By default the
+passphrase is read from a hidden terminal prompt. `--unlock-passphrase-fd` may
+name an inherited pipe managed by a reviewed local secret mechanism; do not put
+the passphrase in an argument, environment variable or file beside the vault.
+The command prints only a public signature envelope. Import that JSON through
+the Proposals page, then export the merged proposal for the next operator.
+
+Every import and signature is checked against fresh membership. Ready evidence
+expires after 30 seconds and must be revalidated before submission. A route that
+finalizes first remains recorded as partially finalized; restart and portable
+import preserve the other route's approvals so it can be revalidated and safely
+resumed. Receipts imported from another operator are never accepted as local
+finality.
+
+The ordinary service has no chain submission adapter and reports submission as
+disabled. The end-to-end interface exercise uses a synthetic isolated-chain
+executor only. A reviewed transaction-payer and receipt adapter for both local
+chains is still required before real submission can be enabled. Production
+profiles, arbitrary governance actions and browser-held signing secrets remain
+unavailable.
