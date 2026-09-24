@@ -563,9 +563,14 @@ same archive and launcher hashes, installed twice with an unchanged installation
 record, passed `doctor` and reported `managedSigning: false` from `authorize`.
 Activation without a reviewed runtime was rejected before any vault or journal
 was created. The existing observation services remained active and the older
-installed signer stayed locked. These fresh installations have not been given
-candidate qualification, host reviews or signing keys; installed live-chain
-multi-operation drain remains untested.
+installed signer stayed locked. A separate, newly signed validator release
+then passed the actual eight-check isolated candidate runner on a temporary
+native AMD64 Docker engine. Fresh sequence-2 local approvals postdated that
+run; both exact-bundle installations imported the identical result and still
+reported `managedSigning: false`. The temporary engine and its newly installed
+packages, socket, bridge and firewall chains were removed. These fresh
+installations still have no host reviews, signing keys or managed journals;
+installed live-chain multi-operation drain remains untested.
 
 ## Permission changes during transfer reads
 
