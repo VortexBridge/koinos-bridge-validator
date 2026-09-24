@@ -2,6 +2,7 @@ package managed
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"os"
 	"strings"
@@ -235,5 +236,81 @@ func TestCompletedUnsignedIntentSurvivesRecovery(t *testing.T) {
 	defer recovered.Close()
 	if recovered.Status().Operations["other-quorum"].State != "completed" {
 		t.Fatal("completion lost")
+	}
+}
+
+type drainVerifier struct {
+	fixtureVerifier
+	current map[string]Operation
+}
+
+func (v *drainVerifier) Operation(ctx context.Context, p Policy, id string) (Operation, error) {
+	op, ok := v.current[id]
+	if !ok {
+		return Operation{}, errors.New("missing finalized receipt")
+	}
+	return op, nil
+}
+
+func TestDrainRequiresEveryRetainedOperationFinalAndKeepsSignatures(t *testing.T) {
+	root := dir(t)
+	private, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := policy()
+	p.EVMAddress = crypto.PubkeyToAddress(private.PublicKey).Hex()
+	v := &drainVerifier{current: map[string]Operation{}}
+	s, err := Open(root, p, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.keys = &keyvault.Keys{EVM: private, Koinos: make([]byte, 32)}
+	s.journal.State = "active"
+	completed := Operation{ID: "first", Family: "evm", Digest: strings.Repeat("d", 64), State: "completed"}
+	pending := Operation{ID: "second", Family: "evm", Digest: strings.Repeat("e", 64), State: "signed"}
+	digest, _ := hex.DecodeString(pending.Digest)
+	signature, err := crypto.Sign(digest, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending.Signature = hex.EncodeToString(signature)
+	s.journal.Operations[completed.ID] = completed
+	s.journal.Operations[pending.ID] = pending
+	if err = s.save(); err != nil {
+		t.Fatal(err)
+	}
+	v.current[completed.ID] = completed
+	v.current[pending.ID] = Operation{ID: pending.ID, Family: pending.Family, Digest: pending.Digest, State: "pending"}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err = s.Drain(cancelled); err == nil || s.Status().State != "active" {
+		t.Fatal("cancelled drain changed active signer state")
+	}
+	if err = s.Drain(context.Background()); err == nil || s.Status().State != "active" || s.keys == nil || s.Status().Operations[pending.ID].State != "signed" {
+		t.Fatal("unfinished operation was silently drained or signer closed")
+	}
+	v.current[pending.ID] = Operation{ID: pending.ID, Family: pending.Family, Digest: strings.Repeat("f", 64), State: "completed"}
+	if err = s.Drain(context.Background()); err == nil || s.Status().State != "active" {
+		t.Fatal("changed operation digest was accepted")
+	}
+	v.current[pending.ID] = Operation{ID: pending.ID, Family: pending.Family, Digest: pending.Digest, State: "completed"}
+	if err = s.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if s.Status().State != "locked" || s.keys != nil || s.Status().Operations[pending.ID].State != "completed" || s.Status().Operations[pending.ID].Signature != pending.Signature {
+		t.Fatal("verified drain failed to persist locked completed state")
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(root, p, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if reopened.Status().State != "locked" || reopened.Status().Operations[pending.ID].State != "completed" || reopened.Status().Operations[pending.ID].Signature != pending.Signature {
+		t.Fatal("drained journal did not survive restart")
 	}
 }

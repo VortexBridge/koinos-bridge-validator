@@ -28,7 +28,13 @@ func RunInteractive(ctx context.Context, s *Session, vault string, input io.Read
 	encoder := json.NewEncoder(output)
 	status := func() error {
 		j := s.Status()
-		return encoder.Encode(map[string]interface{}{"state": j.State, "retainedOperations": len(j.Operations)})
+		unfinalized := 0
+		for _, op := range j.Operations {
+			if op.State != "completed" {
+				unfinalized++
+			}
+		}
+		return encoder.Encode(map[string]interface{}{"state": j.State, "retainedOperations": len(j.Operations), "unfinalizedRetainedOperations": unfinalized})
 	}
 	if e := status(); e != nil {
 		return e
@@ -71,6 +77,15 @@ func RunInteractive(ctx context.Context, s *Session, vault string, input io.Read
 			if len(words) == 1 && words[0] == "stop" {
 				return s.Stop()
 			}
+			if len(words) == 1 && words[0] == "drain" {
+				if e := s.Drain(ctx); e != nil {
+					if err := encoder.Encode(map[string]string{"error": "drain blocked; complete or reconcile retained operations, then retry, or use stop to lock immediately"}); err != nil {
+						return err
+					}
+					continue
+				}
+				return status()
+			}
 			if len(words) == 1 && words[0] == "status" {
 				if e := status(); e != nil {
 					return e
@@ -88,7 +103,7 @@ func RunInteractive(ctx context.Context, s *Session, vault string, input io.Read
 				}
 				continue
 			}
-			if e := encoder.Encode(map[string]string{"error": "use status, sign <direction/transaction:operation>, or stop"}); e != nil {
+			if e := encoder.Encode(map[string]string{"error": "use status, sign <direction/transaction:operation>, drain, or stop"}); e != nil {
 				return e
 			}
 		}

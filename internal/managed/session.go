@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -372,6 +373,50 @@ func (s *Session) Stop() error {
 	if s.closed {
 		return nil
 	}
+	return s.lock()
+}
+
+// Drain is an operator-requested, bounded finality check. It does not submit
+// transactions or create signatures. A failed check leaves the session active
+// so the operator can retry or use Stop to lock immediately.
+func (s *Session) Drain(parent context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.keys == nil || s.journal.State != "active" {
+		return errors.New("signer is locked")
+	}
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+	if err := s.checkPhase(ctx); err != nil {
+		return errors.New("drain requires current signing readiness")
+	}
+	ids := make([]string, 0, len(s.journal.Operations))
+	for id := range s.journal.Operations {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	next := clone(s.journal)
+	for _, id := range ids {
+		old := next.Operations[id]
+		current, err := s.verifier.Operation(ctx, s.policy, id)
+		if err != nil || ctx.Err() != nil || current.ID != id || current.Digest != old.Digest || current.Family != old.Family || current.Signature != "" {
+			return errors.New("drain requires verified finalized receipts for every retained operation")
+		}
+		if current.State != "completed" {
+			return errors.New("drain blocked by a retained operation awaiting finality")
+		}
+		old.State = "completed"
+		next.Operations[id] = old
+	}
+	checkpoint, err := s.verifier.Reconcile(ctx, s.policy, next)
+	if err != nil || ctx.Err() != nil || !validHash(checkpoint) {
+		return errors.New("drain could not reconcile final checkpoints")
+	}
+	if err = s.checkPhase(ctx); err != nil {
+		return errors.New("drain requires current signing readiness")
+	}
+	next.Checkpoint = checkpoint
+	s.journal = next
 	return s.lock()
 }
 func (s *Session) Close() error {

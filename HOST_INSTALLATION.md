@@ -169,6 +169,11 @@ The state transitions are:
 - Every operation is independently resolved by identifier. There is no external
   “sign this hash” command. The session rechecks authorization, persists the intent
   before signing and persists its result before returning a public signature.
+- `drain` rechecks every retained operation against finalized receipts within a
+  30-second budget. It locks the signer only after all retained operations are
+  completed and the final checkpoint is reconciled. It creates no signature or
+  destination transaction. A pending or mismatched operation leaves the signer
+  active for review or retry; `stop` remains the immediate key-lock command.
 - Stop clears keys and releases the same-user identity locks. An active session
   excludes another data directory using either identity, including the existing
   standalone signer's locks.
@@ -521,15 +526,22 @@ The installation lock remains held for the process lifetime. The password is rea
 from the local terminal with echo disabled, before the command reader starts.
 There are no password arguments, password environment variables or unattended
 unlock flags. After activation, enter `status`, `sign DIRECTION/TRANSACTION:INDEX`,
-or `stop`. Signing returns public signatures only and does not submit a transfer.
+`drain`, or `stop`. Signing returns public signatures only and does not submit a
+transfer. `drain` reports a block while any retained transfer remains unfinalized;
+retry after completion or use `stop` to lock without claiming a clean drain.
+`status` reports the public count of unfinalized retained operations; a zero
+local count is not a substitute for the live receipt checks performed by `drain`.
 EOF, stop, cancellation or output failure closes keys and the session; shutdown
 persistence errors propagate to the caller. Unlocking again requires an explicit
 new invocation. No automatic signer restart is enabled.
 
 Linux tests drive the command-loop function with synthetic encrypted keys and
-verified fixture operations in both directions, then test cancellation with a
-blocked input pipe. Separate installed-command exercises now cover actual RPC nodes, terminal
-unlock, crash recovery and fenced replacement in the single-host laboratory.
+verified fixture operations in both directions, a blocked drain, then test
+cancellation with a blocked input pipe. Session tests cover a two-operation
+drain with an unchanged signature across restart. These new drain checks passed
+in Linux AMD64 and ARM64 containers; the updated executable has not yet been
+installed on either development VPS. Separate installed-command exercises cover
+actual RPC nodes, terminal unlock, crash recovery and fenced replacement.
 Full two-host and boot-time service acceptance remain outstanding.
 
 ## Permission changes during transfer reads

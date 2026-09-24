@@ -41,7 +41,7 @@ func TestLinuxInteractiveBothDirectionsAndStop(t *testing.T) {
 		t.Fatal(e)
 	}
 	unlocked, premature := false, false
-	commands := &trackedCommands{Reader: strings.NewReader("status\nsign " + EVMToKoinos + "/" + forward.observation.ID + "\nsign " + KoinosToEVM + "/" + reverse.observation.ID + "\nstop\n"), unlocked: &unlocked, readBeforeUnlock: &premature}
+	commands := &trackedCommands{Reader: strings.NewReader("status\nsign " + EVMToKoinos + "/" + forward.observation.ID + "\nsign " + KoinosToEVM + "/" + reverse.observation.ID + "\ndrain\nstatus\nstop\n"), unlocked: &unlocked, readBeforeUnlock: &premature}
 	var output bytes.Buffer
 	e = RunInteractive(context.Background(), s, vault, commands, &output, func() ([]byte, error) { unlocked = true; return password() })
 	if e != nil || premature || !commands.closed || s.keys != nil || !s.closed || len(s.Status().Operations) != 2 {
@@ -49,6 +49,7 @@ func TestLinuxInteractiveBothDirectionsAndStop(t *testing.T) {
 	}
 	decoder := json.NewDecoder(&output)
 	families := map[string]bool{}
+	drainRejected, activeAfterDrain := false, false
 	for {
 		var record map[string]interface{}
 		e := decoder.Decode(&record)
@@ -61,9 +62,15 @@ func TestLinuxInteractiveBothDirectionsAndStop(t *testing.T) {
 		if family, ok := record["family"].(string); ok {
 			families[family] = record["signature"] != ""
 		}
+		if message, ok := record["error"].(string); ok && strings.Contains(message, "drain blocked") {
+			drainRejected = true
+		}
+		if drainRejected && record["state"] == "active" && record["unfinalizedRetainedOperations"] == float64(2) {
+			activeAfterDrain = true
+		}
 	}
-	if !families["evm"] || !families["koinos"] {
-		t.Fatal("both public signatures missing")
+	if !families["evm"] || !families["koinos"] || !drainRejected || !activeAfterDrain {
+		t.Fatal("both signatures and blocked-drain continuation required")
 	}
 }
 
