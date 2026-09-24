@@ -774,6 +774,40 @@ unlock, and include non-authoritative receipt hints with the public journal
 backup when reverse-route operations exist. Missing either input must fail closed;
 neither should be bypassed by deleting the journal or weakening membership checks.
 
+### Current test signers on both hosts after another rotation
+
+Commit `a922df4` adds a static, actionable `recover-retired` diagnostic for a
+missing or non-private Koinos receipt-location hint. It does not accept the hint
+as signing authority. Clean-source AMD64 bundle SHA-256
+`3cf4ecd5001ed94120cb7c79b2bce6855727ad9a7a1ccd30d5c7a6a4d4de3354`
+and ARM64 bundle SHA-256
+`0cad0aa2e58b99bd6ed1f988d83167bae9fd60ef8fc849ee817ad611691f93f7`
+each matched across two builds. The missing-hint CLI path was verified on native
+Linux; restoring the owner-only hint allowed later gates to run without granting
+activation to an uninstalled fixture.
+
+A newer synthetic signer was generated on the first physical host and a current
+signer on the second was upgraded to the same exact AMD64 bundle. A stopped
+second-host synthetic signer signed a pending EVM deposit before its identities
+were retired on both isolated chains. Recovery on the first host refused before
+rotation and after EVM-only rotation. After Koinos finality and replica agreement,
+it imported four public intents into a locked journal, excluding all retired
+signatures. The old installed signer refused activation before unlock. The two
+current signers, one per physical host, manually unlocked, signed the pending
+operation, and stopped. The destination rejected the retired signature, accepted
+the current pair at Koinos block 815, and became irreversible. Both current
+installations later reconciled completion without generating new signatures.
+
+An initial fresh installation named the wrong previous identities and was
+refused. Its empty journal became bound to that configuration, so the
+unactivated installation was disabled with its empty state preserved; its
+encrypted vault moved into a new private installation with a corrected policy.
+No signed journal was deleted to force import. A copy of that vault was decrypted
+for public-identity verification in the other host's tmpfs and removed there.
+These synthetic hosts still share one owner and cloud account. Whole-host outage,
+real host control approval, durable off-host custody and production authorization
+remain separate requirements.
+
 ## Mutable, non-authoritative Koinos receipt hints
 
 The runtime checks pinned `blockHints` first, then reads the private installation
