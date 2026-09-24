@@ -143,9 +143,10 @@ real AMD64 development hosts, the exact bundle was installed under a non-root
 account with short-lived synthetic local approval; real reboots restarted their
 keyless, observation-only services. The service unit rate-limits messages.
 Provisional development journald and rsyslog bounds passed configuration checks,
-but log load, production retention policy, firewall source restrictions, patching,
-independent administration and emergency access still need host-specific
-acceptance. The second Linux host restored a synthetic observation archive; this
+and both hosts now use default-deny incoming UFW with SSH allowed. Log load,
+production retention policy, SSH source restrictions, patching, independent
+administration and emergency access still need host-specific acceptance. The
+second Linux host restored a synthetic observation archive; this
 does **not** prove managed signing-key recovery, signer fencing or permission
 to sign.
 
@@ -461,16 +462,21 @@ local terminal evidence, not the complete installed CLI lifecycle on two hosts.
 
 ## Remaining acceptance work (must not be skipped)
 
-1. Repeat the complete install/observe/manual-unlock/activate/stop/crash/recovery/
-   replacement exercise on two clean development hosts with the same approved
-   artifact. The current laboratory uses one physical host.
-2. Exercise boot-time systemd behavior, bounded journal retention and encrypted
-   off-host backup/restore, including emergency access and evidence of actual
-   host controls. Synthetic reviewer records do not prove these controls.
-3. Verify logs, exports and backups on those hosts. The local known-secret scans
-   cover runtime trees and container output, not all persistence layers.
-4. Refresh reproducibility and target checks for the exact final artifacts before
-   independent-host acceptance. Keep public deployments observation-only.
+1. Run the complete **installed-runtime** manual-unlock/activate/stop/crash/
+   recovery/replacement exercise across the two real development hosts. Both
+   currently run the same exact approved test artifact in keyless observation;
+   separate synthetic Linux test binaries pass on each, while the earlier
+   installed signer laboratory used one physical Docker host.
+2. Accept actual host controls, including administrator recovery, firewall source
+   restrictions and emergency access. Boot-time systemd and provisional log
+   limits passed on both hosts, and encrypted observation state restored across
+   them; synthetic reviewer records do not prove these controls or signing-key
+   recovery.
+3. Verify logs, exports, backups and retained disks after the distributed signer
+   exercise. Current known-secret scans cover selected test logs, user journals
+   and ciphertext, not all persistence layers.
+4. Refresh reproducibility and target checks for any further artifact change
+   before independent-host acceptance. Keep public deployments observation-only.
 
 ## Runtime composition
 
