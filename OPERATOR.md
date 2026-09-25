@@ -797,3 +797,38 @@ does not create or copy a private recovery identity on the source host. Copy the
 resulting encrypted archive and receipt to independent storage, verify the
 ciphertext hash, and restore on a separate test host before claiming an off-host
 recovery exercise. An observation restore does not recover managed signing keys.
+
+## Record Prompt 06 operator acceptance
+
+Prompt 06 uses the local maintenance identity to authenticate one operator's
+acceptance of a reviewed, sanitized pilot policy. It does not use a bridge key
+and cannot enable signing. Initialize the identity, prepare a private mode-0600
+request from the pilot coordinator's template, and run:
+
+```sh
+vortex-operator --data /absolute/operator-directory maintenance-init
+vortex-operator --data /absolute/operator-directory \
+  --pilot-claim-file /absolute/private/pilot-acceptance.request.json \
+  pilot-accept > /absolute/private/operator-a.pilot-acceptance.json
+```
+
+The request must contain the final policy SHA-256, all eight duties, the selected
+host profile, and sanitized SHA-256 references for host administration, cloud
+recovery, key recovery, backup custody and release approval. The command derives
+the instance ID and public key locally, signs the declaration and stores it under
+the private maintenance directory. The private UI can display and export it.
+
+Combine exactly three signed declarations in a JSON array and verify the same
+file on every host:
+
+```sh
+vortex-operator --data /absolute/operator-directory \
+  --pilot-acceptances-file /absolute/private/three-acceptances.json \
+  --pilot-policy-digest <reviewed-policy-sha256> pilot-verify
+```
+
+The verifier requires distinct aliases, instances, keys and record IDs and
+rejects changed, incomplete or expired declarations. Its result always reports
+`activationReady: false`. The declarations cannot prove that the people, hosts,
+cloud accounts, recovery routes or release decisions are independent; a human
+must review the underlying control evidence before starting the synthetic pilot.

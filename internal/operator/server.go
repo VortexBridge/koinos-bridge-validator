@@ -150,6 +150,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case r.URL.Path == "/v1/pilot" && r.Method == "GET":
+		writeJSON(w, 200, s.Store.PilotState(time.Now().UTC()))
 	case r.URL.Path == "/v1/lifecycle" && r.Method == "GET":
 		writeJSON(w, 200, s.Store.ManagedLifecycle())
 	case r.URL.Path == "/v1/transfers" && r.Method == "GET":
@@ -376,7 +378,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 202, status)
 	case r.URL.Path == "/v1/capabilities" && r.Method == "GET":
-		writeJSON(w, 200, map[string]interface{}{"operatorApiVersion": "v1", "families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "governanceActions": []string{"set_pause"}, "governanceWorkflowEnabled": true, "governanceSubmissionEnabled": s.governance != nil, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
+		writeJSON(w, 200, map[string]interface{}{"operatorApiVersion": "v1", "families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "governanceActions": []string{"set_pause"}, "governanceWorkflowEnabled": true, "governanceSubmissionEnabled": s.governance != nil, "pilotAcceptanceEnabled": true, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
 	case r.URL.Path == "/v1/updates" && r.Method == "GET":
 		trust, err := s.Store.ReleaseTrust()
 		publishers := []string{}
