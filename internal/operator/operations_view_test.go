@@ -195,7 +195,7 @@ func TestLifecycleRoutesRequireExistingAuthenticatedService(t *testing.T) {
 	s, root := managedViewFixture(t, "locked")
 	defer s.Close()
 	token, _ := s.Token()
-	api := NewServer(s, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5173"})
+	api := NewServer(s, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5174"})
 	request := func(method, path, auth string, body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://127.0.0.1:3021"+path, bytes.NewReader(body))
 		req.Host = "127.0.0.1:3021"
@@ -236,7 +236,7 @@ func TestLifecycleRoutesOverActualLocalHTTPService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := NewServer(s, token, "pending", []string{"http://127.0.0.1:5173"})
+	api := NewServer(s, token, "pending", []string{"http://127.0.0.1:5174"})
 	service := httptest.NewUnstartedServer(api)
 	api.Host = service.Listener.Addr().String()
 	service.Start()
@@ -247,13 +247,13 @@ func TestLifecycleRoutesOverActualLocalHTTPService(t *testing.T) {
 		t.Fatal(err)
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Origin", "http://127.0.0.1:5173")
+	request.Header.Set("Origin", "http://127.0.0.1:5174")
 	response, err := service.Client().Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.Header.Get("Access-Control-Allow-Origin") != "http://127.0.0.1:5173" {
+	if response.StatusCode != http.StatusOK || response.Header.Get("Access-Control-Allow-Origin") != "http://127.0.0.1:5174" {
 		t.Fatalf("local service did not enforce and return the expected browser boundary: %s", response.Status)
 	}
 	var lifecycle ManagedLifecycleView

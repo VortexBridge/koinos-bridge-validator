@@ -82,7 +82,7 @@ func TestOperatorBrowserFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := NewServer(store, token, listener.Addr().String(), []string{"http://127.0.0.1:5173"})
+	api := NewServer(store, token, listener.Addr().String(), []string{"http://127.0.0.1:5174"})
 	api.observe = func(ctx context.Context, binding Binding) Observation {
 		observation := governanceFixture.observe(ctx, binding)
 		observation.ObservedAt = time.Now().UTC()

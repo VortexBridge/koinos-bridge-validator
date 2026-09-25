@@ -183,7 +183,7 @@ func TestManagementAuthIsolationAndDurableApply(t *testing.T) {
 	}
 	defer s.Close()
 	token, _ := s.Token()
-	api := NewServer(s, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5173"})
+	api := NewServer(s, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5174"})
 	request := func(method, path, auth, origin, host string, body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "http://127.0.0.1:3021"+path, bytes.NewReader(body))
 		req.Host = host
@@ -201,7 +201,7 @@ func TestManagementAuthIsolationAndDurableApply(t *testing.T) {
 	for _, tc := range []struct {
 		auth, origin, host string
 		status             int
-	}{{"", "", "127.0.0.1:3021", 401}, {token, "https://evil.invalid", "127.0.0.1:3021", 403}, {token, "", "evil.invalid", 403}, {token, "http://127.0.0.1:5173", "127.0.0.1:3021", 200}} {
+	}{{"", "", "127.0.0.1:3021", 401}, {token, "https://evil.invalid", "127.0.0.1:3021", 403}, {token, "", "evil.invalid", 403}, {token, "http://127.0.0.1:5173", "127.0.0.1:3021", 403}, {token, "http://127.0.0.1:5174", "127.0.0.1:3021", 200}} {
 		res := request("GET", "/v1/status", tc.auth, tc.origin, tc.host, nil)
 		if res.Code != tc.status {
 			t.Fatalf("auth status %d want %d", res.Code, tc.status)

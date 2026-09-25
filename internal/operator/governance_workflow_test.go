@@ -276,7 +276,7 @@ func TestGovernanceTypedHTTPWorkflowKeepsSigningOutOfBrowser(t *testing.T) {
 		fixture.observations[id] = observation
 	}
 	token := strings.Repeat("a", 64)
-	api := NewServer(store, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5173"})
+	api := NewServer(store, token, "127.0.0.1:3021", []string{"http://127.0.0.1:5174"})
 	api.observe = fixture.observe
 	api.governance = &syntheticGovernanceExecutor{}
 	request := func(method, path string, body interface{}) *httptest.ResponseRecorder {

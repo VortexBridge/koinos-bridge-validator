@@ -230,7 +230,7 @@ func TestManagedBackupInterruptedJobCannotRestartOrOverwrite(t *testing.T) {
 }
 func TestManagedBackupAPIHasNoPathOrRecipientAuthority(t *testing.T) {
 	s, _, _, _, req := managedBackupFixture(t)
-	server := NewServer(s, strings.Repeat("a", 64), "127.0.0.1:3021", []string{"http://127.0.0.1:5173"})
+	server := NewServer(s, strings.Repeat("a", 64), "127.0.0.1:3021", []string{"http://127.0.0.1:5174"})
 	call := func(path string, body interface{}, auth bool) *httptest.ResponseRecorder {
 		raw, _ := json.Marshal(body)
 		r := httptest.NewRequest("POST", "http://127.0.0.1:3021"+path, bytes.NewReader(raw))

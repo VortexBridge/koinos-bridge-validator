@@ -33,7 +33,7 @@ processes using the same state directory. This is local process exclusion, not
 proof that signing identities are fenced across hosts.
 
 Management binds `127.0.0.1:3021` and only accepts the matching HTTP Host. The
-default trusted browser origin is `http://127.0.0.1:5173`; use `--origins` to set
+default trusted browser origin is `http://127.0.0.1:5174`; use `--origins` to set
 an explicit comma-separated list. Non-loopback management binds are rejected.
 Use an SSH tunnel for a remote operator. Do not expose this port through the
 public validator proxy.
@@ -57,10 +57,12 @@ From `interface-bridge`, install using its committed npm lock and start Vite:
 
 ```sh
 npm ci --legacy-peer-deps --ignore-scripts
-npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+npm run dev:operator
 ```
 
-Open `http://127.0.0.1:5173/operate`. Existing bridge/redeem routes are preserved.
+Open `http://127.0.0.1:5174/`. This is a separate private application: it has no
+Bridge or Redeem routes and initializes no end-user wallet provider. The public
+application remains on its own origin and contains no operator route or API client.
 The ignored lifecycle scripts cause image-optimizer warnings during builds;
 this is a recorded development baseline, not a reproducible production release.
 

@@ -39,7 +39,7 @@ func run() error {
 	dir := flags.String("data", "", "private operator state directory (required)")
 	instance := flags.String("instance", "", "local instance slot; omitted uses default (serve and token-path use the root)")
 	listen := flags.String("listen", "127.0.0.1:3021", "loopback listen address")
-	origins := flags.String("origins", "http://127.0.0.1:5173", "comma-separated exact trusted UI origins")
+	origins := flags.String("origins", "http://127.0.0.1:5174", "comma-separated exact trusted operator-UI origins")
 	workerBase := flags.String("worker-base", "", "private validator base directory for local registration")
 	workerBinary := flags.String("worker-binary", "", "reviewed local validator executable")
 	workerSHA := flags.String("worker-sha256", "", "reviewed validator executable digest")
