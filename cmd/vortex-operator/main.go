@@ -68,6 +68,8 @@ func run() error {
 	pilotClaimFile := flags.String("pilot-claim-file", "", "private reviewed pilot acceptance request JSON")
 	pilotAcceptancesFile := flags.String("pilot-acceptances-file", "", "private array of three signed pilot acceptances")
 	pilotPolicyDigest := flags.String("pilot-policy-digest", "", "exact reviewed pilot policy SHA-256")
+	pilotExerciseFile := flags.String("pilot-exercise-file", "", "private reviewed pilot exercise request JSON")
+	pilotReceiptsFile := flags.String("pilot-receipts-file", "", "private array of signed pilot exercise receipts")
 	waveResultFile := flags.String("wave-result-file", "", "private signed maintenance wave-result JSON")
 	waveResultID := flags.String("wave-result-id", "", "unique lowercase local wave-result ID")
 	progressID := flags.String("progress-id", "", "completed local signing-progress window ID")
@@ -97,8 +99,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "pilot-accept" && command != "pilot-status" && command != "pilot-verify" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "participation-stage-record" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" && command != "governance-submit" && command != "governance-reconcile" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, pilot-accept, pilot-status, pilot-verify, participation-begin, participation-respond, participation-verify, participation-status, participation-stage-record, wave-result-create, wave-result-verify, wave-results, governance-sign, governance-submit, governance-reconcile")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "pilot-accept" && command != "pilot-status" && command != "pilot-verify" && command != "pilot-record" && command != "pilot-audit" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "participation-stage-record" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" && command != "governance-submit" && command != "governance-reconcile" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, pilot-accept, pilot-status, pilot-verify, pilot-record, pilot-audit, participation-begin, participation-respond, participation-verify, participation-status, participation-stage-record, wave-result-create, wave-result-verify, wave-results, governance-sign, governance-submit, governance-reconcile")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -340,6 +342,38 @@ func run() error {
 			return err
 		}
 		report, err := operator.VerifyPilotAcceptances(acceptances, *pilotPolicyDigest, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
+	if command == "pilot-record" {
+		if *pilotExerciseFile == "" {
+			return errors.New("pilot exercise recording requires --pilot-exercise-file")
+		}
+		request, err := operator.ReadPilotExerciseRequest(*pilotExerciseFile)
+		if err != nil {
+			return err
+		}
+		receipt, err := s.RecordPilotExercise(request, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(receipt)
+	}
+	if command == "pilot-audit" {
+		if *pilotAcceptancesFile == "" || *pilotReceiptsFile == "" || *pilotPolicyDigest == "" {
+			return errors.New("pilot audit requires --pilot-acceptances-file, --pilot-receipts-file and --pilot-policy-digest")
+		}
+		acceptances, err := operator.ReadPilotAcceptances(*pilotAcceptancesFile)
+		if err != nil {
+			return err
+		}
+		receipts, err := operator.ReadPilotExerciseReceipts(*pilotReceiptsFile)
+		if err != nil {
+			return err
+		}
+		report, err := operator.VerifyPilotExercise(acceptances, receipts, *pilotPolicyDigest, time.Now().UTC())
 		if err != nil {
 			return err
 		}

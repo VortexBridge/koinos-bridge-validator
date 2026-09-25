@@ -832,3 +832,36 @@ rejects changed, incomplete or expired declarations. Its result always reports
 `activationReady: false`. The declarations cannot prove that the people, hosts,
 cloud accounts, recovery routes or release decisions are independent; a human
 must review the underlying control evidence before starting the synthetic pilot.
+
+After each exercise, obtain the exact `acceptanceDigest` from `pilot-status` or
+the private Pilot view. Prepare a private request containing that digest, one
+required phase, the observed duration and one or more sanitized evidence
+SHA-256 values, then record it on the same operator:
+
+```sh
+vortex-operator --data /absolute/operator-directory \
+  --pilot-exercise-file /absolute/private/pilot-exercise.request.json \
+  pilot-record > /absolute/private/pilot-exercise.receipt.json
+```
+
+Receipt IDs are durable: retrying the identical request returns the original,
+while changing evidence under an existing ID fails. The required phases cover
+onboarding, membership, normal progress in both directions, unexpected outage,
+planned maintenance, RPC disagreement, peer outage, persistence failure,
+coordinator loss, restart reconciliation, observation-only restore and fenced
+replacement. Raw logs and infrastructure details stay outside the request.
+
+After all three operators export their receipts, combine them in one JSON array
+and audit it with the same three acceptances:
+
+```sh
+vortex-operator --data /absolute/operator-directory \
+  --pilot-acceptances-file /absolute/private/three-acceptances.json \
+  --pilot-receipts-file /absolute/private/pilot-receipts.json \
+  --pilot-policy-digest <reviewed-policy-sha256> pilot-audit
+```
+
+The audit requires one valid passed receipt from every operator for every phase,
+all bound to one session and the exact accepted policy. A complete report still
+returns `activationReady: false` and needs human review of independence and the
+underlying sanitized evidence before any production decision.

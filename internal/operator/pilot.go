@@ -211,12 +211,16 @@ func (s *Store) RecordPilotAcceptance(request PilotAcceptanceRequest, now time.T
 }
 
 func (s *Store) PilotState(now time.Time) map[string]interface{} {
+	receipts, receiptProblem := s.pilotExerciseInventory(now)
 	result := map[string]interface{}{
 		"state":                  "not-accepted",
 		"activationReady":        false,
 		"requiredOperators":      3,
 		"requiredDuties":         append([]string(nil), pilotDuties...),
 		"requiredControlDomains": append([]string(nil), pilotControlDomains...),
+		"requiredExercisePhases": append([]string(nil), pilotExercisePhases...),
+		"exerciseReceipts":       receipts,
+		"exerciseProblem":        receiptProblem,
 		"notice":                 "This local record is one signed declaration. Prompt 06 requires three independent people on separate control domains and human review of sanitized evidence.",
 	}
 	member, _, err := s.maintenanceIdentity()
@@ -230,15 +234,15 @@ func (s *Store) PilotState(now time.Time) map[string]interface{} {
 	if _, err := os.Lstat(path); os.IsNotExist(err) {
 		return result
 	}
-	raw, err := worker.ReadPrivateFile(path, 64<<10)
-	var acceptance SignedPilotAcceptance
-	if err != nil || strictJSON(raw, &acceptance) != nil || acceptance.Claim.InstanceID != member.InstanceID || acceptance.Claim.MaintenancePublicKey != member.PublicKey || verifySignedPilotAcceptance(acceptance, now) != nil {
+	acceptance, err := s.localPilotAcceptance(now)
+	if err != nil {
 		result["state"] = "invalid-local-record"
 		result["problem"] = "local pilot acceptance is missing, expired, corrupt or signed by another identity"
 		return result
 	}
 	result["state"] = "locally-accepted"
 	result["acceptance"] = acceptance
+	result["acceptanceDigest"] = PilotAcceptanceDigest(acceptance)
 	return result
 }
 
