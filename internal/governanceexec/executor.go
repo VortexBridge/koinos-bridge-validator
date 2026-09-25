@@ -576,12 +576,12 @@ func (e *Executor) reconcileEVM(ctx context.Context, binding operator.Binding, r
 		receipt.Message = "EVM transaction finalized unsuccessfully."
 		return receipt, nil
 	}
-	finalized, err := client.HeaderByNumber(ctx, big.NewInt(int64(gethrpc.FinalizedBlockNumber)))
-	if err != nil || finalized.Number.Cmp(chainReceipt.BlockNumber) < 0 {
+	finalizedNumber, _, err := evmHeaderIdentity(ctx, binding, "finalized")
+	if err != nil || finalizedNumber.Cmp(chainReceipt.BlockNumber) < 0 {
 		return receipt, nil
 	}
-	canonical, err := client.HeaderByNumber(ctx, chainReceipt.BlockNumber)
-	if err != nil || canonical.Hash() != chainReceipt.BlockHash {
+	canonicalNumber, canonicalHash, err := evmHeaderIdentity(ctx, binding, "0x"+chainReceipt.BlockNumber.Text(16))
+	if err != nil || canonicalNumber.Cmp(chainReceipt.BlockNumber) != 0 || canonicalHash != chainReceipt.BlockHash {
 		return receipt, errors.New("EVM receipt block is not canonical")
 	}
 	receipt.State = "finalized"
@@ -590,6 +590,29 @@ func (e *Executor) reconcileEVM(ctx context.Context, binding operator.Binding, r
 	receipt.BlockHash = chainReceipt.BlockHash.Hex()
 	receipt.Message = "EVM governance transaction is finalized and canonical."
 	return receipt, nil
+}
+
+func evmHeaderIdentity(ctx context.Context, binding operator.Binding, block string) (*big.Int, common.Hash, error) {
+	if err := binding.Validate(); err != nil || binding.Profile.Family != "evm" || binding.Profile.Environment != "local" || !binding.Profile.Reviewed {
+		return nil, common.Hash{}, errors.New("reviewed local EVM binding required")
+	}
+	rpcClient, err := gethrpc.DialHTTPWithClient(binding.RPC, httpClient())
+	if err != nil {
+		return nil, common.Hash{}, errors.New("EVM RPC unavailable")
+	}
+	defer rpcClient.Close()
+	var header *struct {
+		Number string      `json:"number"`
+		Hash   common.Hash `json:"hash"`
+	}
+	if err := rpcClient.CallContext(ctx, &header, "eth_getBlockByNumber", block, false); err != nil || header == nil || !strings.HasPrefix(header.Number, "0x") || header.Hash == (common.Hash{}) {
+		return nil, common.Hash{}, errors.New("EVM canonical head is unavailable")
+	}
+	number, ok := new(big.Int).SetString(strings.TrimPrefix(header.Number, "0x"), 16)
+	if !ok || number.Sign() < 0 {
+		return nil, common.Hash{}, errors.New("EVM canonical head is invalid")
+	}
+	return number, header.Hash, nil
 }
 
 func (e *Executor) reconcileKoinos(ctx context.Context, binding operator.Binding, route operator.GovernanceRoute, receipt operator.GovernanceReceipt) (operator.GovernanceReceipt, error) {
@@ -638,14 +661,7 @@ func (e *Executor) reconcileKoinos(ctx context.Context, binding operator.Binding
 			}
 			for _, tx := range item.Block.Transactions {
 				if tx != nil && bytes.Equal(tx.Id, want) {
-					transactionIDs := make([][]byte, len(item.Block.Transactions))
-					for index, candidate := range item.Block.Transactions {
-						if candidate == nil || len(candidate.Id) != 34 {
-							return receipt, errors.New("invalid Koinos transaction in irreversible block")
-						}
-						transactionIDs[index] = candidate.Id
-					}
-					transactionRoot, err := kutil.CalculateMerkleRoot(transactionIDs)
+					transactionRoot, err := koinosTransactionMerkleRoot(item.Block.Transactions)
 					if err != nil || !bytes.Equal(transactionRoot, item.Block.Header.TransactionMerkleRoot) {
 						return receipt, errors.New("Koinos transaction root differs from irreversible block header")
 					}
@@ -687,6 +703,38 @@ func (e *Executor) reconcileKoinos(ctx context.Context, binding operator.Binding
 		offset += chunk
 	}
 	return receipt, nil
+}
+
+// koinosTransactionMerkleRoot mirrors the block producer's transaction-root
+// algorithm. Each transaction contributes the sha256 of its canonical header
+// followed by the sha256 of all signatures concatenated in wire order. The
+// transaction ID is independently checked against the canonical header hash so
+// an untrusted RPC cannot attach an arbitrary ID to different transaction data.
+func koinosTransactionMerkleRoot(transactions []*protocol.Transaction) ([]byte, error) {
+	leaves := make([][]byte, 0, len(transactions)*2)
+	for _, transaction := range transactions {
+		if transaction == nil || transaction.Header == nil {
+			return nil, errors.New("invalid Koinos transaction in irreversible block")
+		}
+		headerBytes, err := canonical.Marshal(transaction.Header)
+		if err != nil {
+			return nil, errors.New("invalid Koinos transaction header")
+		}
+		headerHash := sha256.Sum256(headerBytes)
+		headerLeaf, err := multihash.Encode(headerHash[:], multihash.SHA2_256)
+		if err != nil || !bytes.Equal(transaction.Id, headerLeaf) {
+			return nil, errors.New("Koinos transaction ID differs from its canonical header")
+		}
+		leaves = append(leaves, headerLeaf)
+
+		signatureHash := sha256.Sum256(bytes.Join(transaction.Signatures, nil))
+		signatureLeaf, err := multihash.Encode(signatureHash[:], multihash.SHA2_256)
+		if err != nil {
+			return nil, errors.New("invalid Koinos transaction signatures")
+		}
+		leaves = append(leaves, signatureLeaf)
+	}
+	return kutil.CalculateMerkleRoot(leaves)
 }
 
 func (e *Executor) Reconcile(ctx context.Context, binding operator.Binding, _ operator.GovernanceProposal, route operator.GovernanceRoute, receipt operator.GovernanceReceipt) (operator.GovernanceReceipt, error) {

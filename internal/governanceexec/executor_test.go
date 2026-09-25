@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,7 @@ import (
 	kutil "github.com/koinos/koinos-util-golang"
 	"github.com/mr-tron/base58"
 	"github.com/multiformats/go-multihash"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -39,6 +41,30 @@ func executorProfile(family string) operator.Profile {
 		return operator.Profile{SchemaVersion: 1, ID: "fixture-evm", Name: "Fixture EVM", Family: "evm", Environment: "local", NetworkID: "31337", BridgeChainID: 2, Contract: "0x1111111111111111111111111111111111111111", Codec: operator.EVMCodec, SourceCommit: operator.EVMSource, CodeHash: strings.Repeat("1", 64), ReviewEvidence: "synthetic executor fixture", Reviewed: true}
 	}
 	return operator.Profile{SchemaVersion: 1, ID: "fixture-koinos", Name: "Fixture Koinos", Family: "koinos", Environment: "local", NetworkID: "EiBZK_GGVP0H_fXVAM3j6EAuz3-B-l3ejxRSewi7qIBfSA==", BridgeChainID: 1, Contract: "1aqHtNRDkiAZeFtuM8fRFuurcje6eHqF8", Codec: operator.KoinosCodec, SourceCommit: operator.KoinosSource, CodeHash: strings.Repeat("2", 64), ReviewEvidence: "synthetic executor fixture", Reviewed: true}
+}
+
+func TestFinalizedEVMHeaderUsesNamedFinalityTag(t *testing.T) {
+	wantNumber := big.NewInt(7)
+	wantHash := common.HexToHash("0x1234")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     int               `json:"id"`
+			Method string            `json:"method"`
+			Params []json.RawMessage `json:"params"`
+		}
+		if json.NewDecoder(r.Body).Decode(&request) != nil || request.Method != "eth_getBlockByNumber" || len(request.Params) != 2 || string(request.Params[0]) != `"finalized"` || string(request.Params[1]) != "false" {
+			t.Error("finalized EVM read did not use the named RPC finality tag")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": request.ID, "result": map[string]string{"number": "0x7", "hash": wantHash.Hex()}})
+	}))
+	defer server.Close()
+	binding := operator.Binding{Profile: executorProfile("evm"), RPC: server.URL}
+	gotNumber, gotHash, err := evmHeaderIdentity(context.Background(), binding, "finalized")
+	if err != nil || gotNumber.Cmp(wantNumber) != 0 || gotHash != wantHash {
+		t.Fatal("named finalized EVM head was not read", err)
+	}
 }
 
 func executorRoute(t *testing.T, family string) operator.GovernanceRoute {
@@ -315,9 +341,12 @@ func TestKoinosSubmitPersistsAndReusesExactSignedTransaction(t *testing.T) {
 func TestKoinosReconcileRequiresIrreversibleCanonicalReceipt(t *testing.T) {
 	route := executorRoute(t, "koinos")
 	route.Anchor.Block = "4"
-	transactionHash := sha256.Sum256([]byte("synthetic-governance-transaction"))
-	transactionID, _ := multihash.Encode(transactionHash[:], multihash.SHA2_256)
-	transactionRoot, _ := kutil.CalculateMerkleRoot([][]byte{transactionID})
+	transaction := syntheticKoinosTransaction(t, 1)
+	transactionID := transaction.Id
+	transactionRoot, err := koinosTransactionMerkleRoot([]*protocol.Transaction{transaction})
+	if err != nil {
+		t.Fatal(err)
+	}
 	header := &protocol.BlockHeader{Height: 5, TransactionMerkleRoot: transactionRoot}
 	headerRaw, _ := canonical.Marshal(header)
 	blockHash := sha256.Sum256(headerRaw)
@@ -326,7 +355,7 @@ func TestKoinosReconcileRequiresIrreversibleCanonicalReceipt(t *testing.T) {
 	item := &blockrpc.BlockItem{
 		BlockId:     blockID,
 		BlockHeight: 5,
-		Block:       &protocol.Block{Id: blockID, Header: header, Transactions: []*protocol.Transaction{{Id: transactionID}}},
+		Block:       &protocol.Block{Id: blockID, Header: header, Transactions: []*protocol.Transaction{transaction}},
 		Receipt:     &protocol.BlockReceipt{Id: blockID, Height: 5, TransactionReceipts: []*protocol.TransactionReceipt{{Id: transactionID}}},
 	}
 	rpc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -365,5 +394,62 @@ func TestKoinosReconcileRequiresIrreversibleCanonicalReceipt(t *testing.T) {
 	result, err = executor.Reconcile(context.Background(), operator.Binding{Profile: route.Profile, RPC: rpc.URL}, operator.GovernanceProposal{}, route, receipt)
 	if err != nil || result.State != "failed" {
 		t.Fatal("reverted irreversible Koinos receipt was not failed", result, err)
+	}
+}
+
+func syntheticKoinosTransaction(t *testing.T, nonce uint64) *protocol.Transaction {
+	t.Helper()
+	header := &protocol.TransactionHeader{
+		ChainId:             []byte("synthetic-chain"),
+		RcLimit:             1000 + nonce,
+		Nonce:               protowire.AppendVarint(nil, nonce),
+		OperationMerkleRoot: []byte("synthetic-operation-root"),
+		Payer:               []byte("synthetic-payer"),
+	}
+	headerBytes, err := canonical.Marshal(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerHash := sha256.Sum256(headerBytes)
+	id, err := multihash.Encode(headerHash[:], multihash.SHA2_256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &protocol.Transaction{
+		Id:         id,
+		Header:     header,
+		Signatures: [][]byte{[]byte(fmt.Sprintf("signature-%d-a", nonce)), []byte(fmt.Sprintf("signature-%d-b", nonce))},
+	}
+}
+
+func TestKoinosTransactionMerkleRootMatchesBlockAlgorithm(t *testing.T) {
+	first := syntheticKoinosTransaction(t, 1)
+	second := syntheticKoinosTransaction(t, 2)
+
+	var leaves [][]byte
+	for _, transaction := range []*protocol.Transaction{first, second} {
+		headerBytes, err := canonical.Marshal(transaction.Header)
+		if err != nil {
+			t.Fatal(err)
+		}
+		headerHash := sha256.Sum256(headerBytes)
+		headerLeaf, _ := multihash.Encode(headerHash[:], multihash.SHA2_256)
+		signatureHash := sha256.Sum256(bytes.Join(transaction.Signatures, nil))
+		signatureLeaf, _ := multihash.Encode(signatureHash[:], multihash.SHA2_256)
+		leaves = append(leaves, headerLeaf, signatureLeaf)
+	}
+	want, err := kutil.CalculateMerkleRoot(leaves)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := koinosTransactionMerkleRoot([]*protocol.Transaction{first, second})
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("unexpected transaction root %x, want %x: %v", got, want, err)
+	}
+
+	tampered := proto.Clone(first).(*protocol.Transaction)
+	tampered.Header.RcLimit++
+	if _, err := koinosTransactionMerkleRoot([]*protocol.Transaction{tampered}); err == nil {
+		t.Fatal("tampered transaction ID was accepted")
 	}
 }
