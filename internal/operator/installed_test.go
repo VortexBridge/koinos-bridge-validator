@@ -188,7 +188,7 @@ func TestUpdatesEndpointReportsInstalledIdentityAndCompatibility(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.InstalledVersion == nil || body.InstalledVersion.Digest != digest || body.InstalledProblem != "" || body.InstallerEnabled || len(body.Staged) != 1 || body.Staged[0].Compatibility == nil || body.Staged[0].Compatibility.State != "already-installed" {
+	if body.InstalledVersion == nil || body.InstalledVersion.Digest != digest || body.InstalledProblem != "" || !body.InstallerEnabled || len(body.Staged) != 1 || body.Staged[0].Compatibility == nil || body.Staged[0].Compatibility.State != "already-installed" {
 		t.Fatalf("updates hid or overstated installed release: %+v", body)
 	}
 }

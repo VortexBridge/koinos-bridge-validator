@@ -46,13 +46,31 @@ type BeginParticipationRequest struct {
 	Envelope         MaintenanceEnvelope `json:"envelope"`
 }
 type ParticipationObservation struct {
-	SchemaVersion int                  `json:"schemaVersion"`
-	InstanceID    string               `json:"instanceId"`
-	ProbeDigest   string               `json:"probeDigest"`
-	ObservedAt    time.Time            `json:"observedAt"`
-	Snapshot      *ProgressSnapshot    `json:"snapshot,omitempty"`
-	SigningProof  *worker.SigningProof `json:"signingProof,omitempty"`
-	Problem       string               `json:"problem,omitempty"`
+	SchemaVersion int                          `json:"schemaVersion"`
+	InstanceID    string                       `json:"instanceId"`
+	ProbeDigest   string                       `json:"probeDigest"`
+	ObservedAt    time.Time                    `json:"observedAt"`
+	Snapshot      *ProgressSnapshot            `json:"snapshot,omitempty"`
+	SigningProof  *worker.SigningProof         `json:"signingProof,omitempty"`
+	StageEvidence []ParticipationStageEvidence `json:"stageEvidence"`
+	Problem       string                       `json:"problem,omitempty"`
+}
+
+// ParticipationStageEvidence is a short-lived local operator attestation for
+// one non-contract route stage. It is loaded from a private reviewed file and
+// covered by the operator's participation signature. Contract membership and
+// bridge-key possession continue to use their stronger chain/key proofs.
+type ParticipationStageEvidence struct {
+	SchemaVersion  int       `json:"schemaVersion"`
+	InstanceID     string    `json:"instanceId"`
+	RouteID        string    `json:"routeId"`
+	Stage          string    `json:"stage"`
+	Kind           string    `json:"kind"`
+	CheckedAt      time.Time `json:"checkedAt"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+	EvidenceDigest string    `json:"evidenceDigest"`
+	State          string    `json:"state"`
+	Notice         string    `json:"notice"`
 }
 type SignedParticipationObservation struct {
 	Observation ParticipationObservation `json:"observation"`
@@ -167,6 +185,91 @@ func (s *Store) localParticipationReservation(req MaintenanceEnvelope, policy Ma
 		}
 	}
 	return nil, errors.New("plan has no durable local reservation")
+}
+
+var participationStageKinds = map[string]string{
+	"peer":     "two-direction-signing-progress",
+	"api":      "authenticated-api-probe",
+	"frontend": "private-operator-ui-probe",
+}
+
+func validateParticipationStageEvidence(evidence ParticipationStageEvidence, policy MaintenancePolicy, instanceID string, now time.Time) error {
+	wantKind, supported := participationStageKinds[evidence.Stage]
+	if evidence.SchemaVersion != 1 || evidence.InstanceID != instanceID || !slug.MatchString(evidence.RouteID) || !supported || evidence.Kind != wantKind || !hexHash.MatchString(evidence.EvidenceDigest) || evidence.State != "passed" || evidence.CheckedAt.IsZero() || evidence.CheckedAt.After(now.Add(5*time.Second)) || !evidence.ExpiresAt.After(now) || !evidence.ExpiresAt.After(evidence.CheckedAt) || evidence.ExpiresAt.Sub(evidence.CheckedAt) > 5*time.Minute || len(evidence.Notice) == 0 || len(evidence.Notice) > 1024 {
+		return errors.New("invalid, expired or unsupported participation stage evidence")
+	}
+	for _, route := range policy.Routes {
+		if route.ID != evidence.RouteID {
+			continue
+		}
+		for _, stage := range route.Stages {
+			if stage.Name != evidence.Stage {
+				continue
+			}
+			for _, participant := range stage.Participants {
+				if participant == instanceID {
+					return nil
+				}
+			}
+		}
+	}
+	return errors.New("participation stage evidence is outside the local maintenance policy")
+}
+
+func (s *Store) participationStageEvidence(policy MaintenancePolicy, now time.Time) ([]ParticipationStageEvidence, error) {
+	path := filepath.Join(s.dir, "maintenance", "stage-evidence.json")
+	raw, err := worker.ReadPrivateFile(path, 128<<10)
+	if err != nil {
+		return nil, errors.New("record fresh reviewed peer, API and private-UI stage evidence locally")
+	}
+	var evidence []ParticipationStageEvidence
+	if strictJSON(raw, &evidence) != nil || len(evidence) == 0 || len(evidence) > 96 {
+		return nil, errors.New("local participation stage evidence is invalid")
+	}
+	seen := map[string]bool{}
+	for _, item := range evidence {
+		key := contractTargetKey(item.RouteID, item.Stage)
+		if seen[key] || validateParticipationStageEvidence(item, policy, s.InstanceID(), now) != nil {
+			return nil, errors.New("local participation stage evidence is duplicate, expired or invalid")
+		}
+		seen[key] = true
+	}
+	return evidence, nil
+}
+
+func (s *Store) RecordParticipationStageEvidence(path string, now time.Time) ([]ParticipationStageEvidence, error) {
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("participation stage evidence requires an absolute private JSON path")
+	}
+	raw, err := worker.ReadPrivateFile(path, 128<<10)
+	if err != nil {
+		return nil, err
+	}
+	var evidence []ParticipationStageEvidence
+	if strictJSON(raw, &evidence) != nil || len(evidence) == 0 || len(evidence) > 96 {
+		return nil, errors.New("participation stage evidence must be one bounded JSON array")
+	}
+	policy, err := s.MaintenancePolicy(now)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, item := range evidence {
+		key := contractTargetKey(item.RouteID, item.Stage)
+		if seen[key] || validateParticipationStageEvidence(item, policy, s.InstanceID(), now) != nil {
+			return nil, errors.New("participation stage evidence is duplicate, expired or outside local policy")
+		}
+		seen[key] = true
+	}
+	dir := filepath.Join(s.dir, "maintenance")
+	if err := worker.PrivateDir(dir); err != nil {
+		return nil, err
+	}
+	encoded, _ := json.MarshalIndent(evidence, "", "  ")
+	if err := atomicFile(dir, "stage-evidence.json", encoded); err != nil {
+		return nil, err
+	}
+	return evidence, nil
 }
 func (s *Store) BeginParticipation(req BeginParticipationRequest, now time.Time) (ParticipationRequest, error) {
 	s.updateMu.Lock()
@@ -286,7 +389,11 @@ func (s *Store) ObserveParticipation(ctx context.Context, req ParticipationReque
 	if err := verifyParticipationRequest(req, currentPolicy, now); err != nil {
 		return SignedParticipationObservation{}, err
 	}
-	observation := ParticipationObservation{SchemaVersion: 1, InstanceID: s.InstanceID(), ProbeDigest: maintenanceDigest(req.Probe.Challenge), ObservedAt: now}
+	stageEvidence, stageErr := s.participationStageEvidence(currentPolicy, now)
+	if stageErr != nil {
+		stageEvidence = []ParticipationStageEvidence{}
+	}
+	observation := ParticipationObservation{SchemaVersion: 1, InstanceID: s.InstanceID(), ProbeDigest: maintenanceDigest(req.Probe.Challenge), ObservedAt: now, StageEvidence: stageEvidence}
 	if captureErr != nil {
 		observation.Problem = captureErr.Error()
 	} else {
@@ -321,7 +428,7 @@ func verifyParticipationSigningProof(proof worker.SigningProof, probeDigest stri
 	return "signing-key-proved", nil
 }
 
-func participationStages(policy MaintenancePolicy, requester string, states map[string]map[string]string) ([]ParticipationStageResult, bool) {
+func participationStages(policy MaintenancePolicy, requester string, states map[string]map[string]string, external map[string]map[string]bool) ([]ParticipationStageResult, bool) {
 	results := []ParticipationStageResult{}
 	allContractKeys := true
 	for _, route := range policy.Routes {
@@ -345,8 +452,24 @@ func participationStages(policy MaintenancePolicy, requester string, states map[
 					allContractKeys = false
 				}
 			} else {
-				result.Unverified = append(result.Unverified, stage.Participants...)
-				result.Notice = "Authenticated worker key possession does not verify this external peer, API or frontend stage."
+				key := contractTargetKey(route.ID, stage.Name)
+				for _, id := range stage.Participants {
+					if id != requester && external[key][id] {
+						result.Eligible = append(result.Eligible, id)
+					} else {
+						result.Unverified = append(result.Unverified, id)
+					}
+				}
+				if len(result.Eligible) >= result.Required {
+					result.State = "evidence-threshold-passed"
+					result.Notice = "Enough non-updating operators supplied fresh signed local evidence for this stage. Each evidence digest remains an operator attestation, not remote host attestation."
+				} else if len(result.Eligible) == 0 {
+					result.State = "unknown"
+					result.Notice = "No fresh signed local evidence is available for this stage."
+				} else {
+					result.State = "blocked"
+					result.Notice = "Too few non-updating operators supplied fresh signed local evidence for this stage."
+				}
 			}
 			results = append(results, result)
 		}
@@ -364,6 +487,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	result := ParticipationVerification{ProbeDigest: maintenanceDigest(req.Probe.Challenge), CheckedAt: now, ExpiresAt: req.Probe.Challenge.ExpiresAt, Members: []ParticipationMemberResult{}, Missing: []string{}, Stages: []ParticipationStageResult{}, ContractObservations: []ParticipationContractObservation{}, Notice: "Authenticated operator and worker key-possession evidence only. Fresh contract membership, valid bridge signatures and each peer/API/frontend threshold remain required; observations cannot authorize installation."}
 	seen := map[string]bool{}
 	memberStates := map[string]map[string]string{}
+	externalStageStates := map[string]map[string]bool{}
 	memberPolicy := map[string]MaintenanceMember{}
 	for _, member := range policy.Members {
 		memberPolicy[member.InstanceID] = member
@@ -380,6 +504,21 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 		}
 		if (o.Snapshot == nil) == (o.Problem == "") || len(o.Problem) > 1024 || (o.SigningProof != nil && o.Snapshot == nil) {
 			return ParticipationVerification{}, errors.New("participation response has contradictory evidence")
+		}
+		if len(o.StageEvidence) > 96 {
+			return ParticipationVerification{}, errors.New("participation response has too much stage evidence")
+		}
+		stageSeen := map[string]bool{}
+		for _, evidence := range o.StageEvidence {
+			key := contractTargetKey(evidence.RouteID, evidence.Stage)
+			if stageSeen[key] || validateParticipationStageEvidence(evidence, policy, o.InstanceID, now) != nil || evidence.CheckedAt.After(o.ObservedAt) || o.ObservedAt.Sub(evidence.CheckedAt) > 30*time.Second {
+				return ParticipationVerification{}, errors.New("participation response has invalid, stale or duplicate stage evidence")
+			}
+			stageSeen[key] = true
+			if externalStageStates[key] == nil {
+				externalStageStates[key] = map[string]bool{}
+			}
+			externalStageStates[key][o.InstanceID] = true
 		}
 		member := ParticipationMemberResult{o.InstanceID, "unavailable", o.Problem}
 		matchedRoutes := []string{}
@@ -453,7 +592,7 @@ func VerifyParticipation(req ParticipationRequest, reports []SignedParticipation
 	sort.Slice(result.Members, func(i, j int) bool { return result.Members[i].InstanceID < result.Members[j].InstanceID })
 	sort.Strings(result.Missing)
 	result.AllResponded = len(result.Missing) == 0
-	result.Stages, result.ContractKeyThresholdsMet = participationStages(policy, req.Probe.Challenge.Requester, memberStates)
+	result.Stages, result.ContractKeyThresholdsMet = participationStages(policy, req.Probe.Challenge.Requester, memberStates, externalStageStates)
 	return result, nil
 }
 
@@ -680,10 +819,19 @@ func applyParticipationContractObservations(verified *ParticipationVerification,
 		stage.Notice = fmt.Sprintf("%d non-updating key-proved operators are current finalized contract members; policy requires %d and the observed contract quorum is %d. Productive signing remains unverified.", len(stage.MembershipEligible), stage.Required, observation.Quorum)
 	}
 	verified.ContractMembershipThresholdsMet = contractStages > 0 && allMembership
-	if verified.ContractMembershipThresholdsMet {
-		verified.Notice = "Fresh key-possession and finalized contract-membership evidence satisfies both contract stages for every route. Valid bridge signatures and each peer/API/frontend threshold remain required; this inspection cannot authorize installation."
+	allStages := len(verified.Stages) > 0
+	for _, stage := range verified.Stages {
+		if stage.State != "membership-threshold-passed" && stage.State != "evidence-threshold-passed" {
+			allStages = false
+		}
+	}
+	verified.ActivationReady = verified.AllResponded && verified.ContractMembershipThresholdsMet && allStages
+	if verified.ActivationReady {
+		verified.Notice = "Fresh signed operator evidence, bridge-key possession and finalized contract membership satisfy every declared stage while the selected operator is excluded. This point-in-time result still requires exact release approval, backup, wave order and a local installer decision."
+	} else if verified.ContractMembershipThresholdsMet {
+		verified.Notice = "Fresh key-possession and finalized contract-membership evidence satisfies both contract stages for every route. One or more peer, API or private-UI stage thresholds remain unverified."
 	} else {
-		verified.Notice = "Fresh contract membership is missing, mismatched, unfinalized or below a required threshold on at least one route. Valid bridge signatures and each peer/API/frontend threshold also remain required; this inspection cannot authorize installation."
+		verified.Notice = "Fresh contract membership is missing, mismatched, unfinalized or below a required threshold on at least one route. Every external stage threshold also remains required."
 	}
 }
 

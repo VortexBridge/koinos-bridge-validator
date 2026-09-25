@@ -283,11 +283,11 @@ candidate execution. No artifact is downloaded or executed by the HTTP routes.
 Approval records bind the manifest digest, component, sequence, local operator
 instance and activation window. They survive restart and can be revoked. The
 release sequence remains recorded after revocation to prevent replay/downgrade.
-Re-approving an old sequence or extending an expired approval currently requires
-a future reviewed recovery workflow; it is not silently allowed. The future
-installer must reload current approval and publisher policy and enforce
-`CheckActivation` immediately before changing a process, alongside compatibility,
-backup and quorum checks. An approval response is not an installation receipt.
+Re-approving an old sequence or extending an expired approval requires a reviewed
+recovery workflow; it is not silently allowed. The update-readiness path reloads
+current approval and publisher policy and checks compatibility, backup,
+participation, quorum and wave order before it can issue a short-lived ready
+receipt. An approval response is not an installation receipt.
 
 For UI verification only, `interface-bridge/scripts/operator-release-fixture.cjs`
 creates a public, deliberately insecure test publisher policy and a signed
@@ -335,7 +335,8 @@ recorded sequence, predecessor versions, configuration and database schemas,
 signing codec, and signed mixed-version declaration. Only an exact compatible
 set is labeled eligible for further rolling qualification. This compatibility
 label does not replace candidate testing, local approval, backup, participation,
-activation, verification or recovery gates. The installer remains disabled.
+activation, verification or recovery gates. Rolling, forward-only migration and
+emergency eligibility are described in [UPDATE_RECOVERY.md](UPDATE_RECOVERY.md).
 
 The console can record a point-in-time **update readiness receipt** for a selected
 staged release. Supply the ID of a completed encrypted backup and the fresh signed
@@ -349,15 +350,23 @@ Each pass, block or unknown result is retained in the private
 
 Readiness receipt IDs are immutable: an exact retry returns the original receipt,
 while different evidence needs a new ID. Receipts expire after at most 30 seconds
-and always remain non-authorizing in this implementation. Signed worker telemetry
+and do not start an update. Signed worker telemetry
 can now carry a domain-separated proof that the responding process possesses both
 bridge keys mapped in local maintenance policy. The participation report excludes
-the updating operator and evaluates both contract-stage key thresholds. This does
-not prove current on-chain membership, productive bridge signing or the
-peer/API/frontend stages, so signing quorum remains blocked. Later waves also
-require the immediately preceding operator's signed result. The
-install/verify/recovery state machine remains missing, `installerEnabled` stays
-false, and no receipt permits stopping or replacing a validator.
+the updating operator and evaluates both contract-stage key thresholds. Fresh
+finalized contract membership and short-lived signed peer, authenticated API and
+private-UI evidence must also meet every route threshold. Later waves require the
+immediately preceding operator's signed result.
+
+When every check passes, the private UI can bind a separate explicit local start
+to the exact unexpired receipt. The durable update journal advances only one
+phase per authenticated action: drain, stop/fence, exact install and verification.
+Compatible failures can restore the exact retained predecessor; migrations allow
+only a newer tested and locally approved forward-recovery release. A verified
+update remains incomplete until fresh progress records both directions and local
+signature changes. Terminal records must be archived before another operation
+can start. The fixed HTTP requests contain identifiers and modes only, never an
+executable path or shell command. See [UPDATE_RECOVERY.md](UPDATE_RECOVERY.md).
 
 The fixed `cmd/vortex-candidate-check` program can be built for the local Docker
 engine's native Linux architecture with `CGO_ENABLED=0`. Review its source and
@@ -380,13 +389,13 @@ Work data is disposable tmpfs. The candidate cannot access the operator director
 production configuration, Docker socket or signing keys through this container.
 Only resources with this invocation's randomly generated names are removed.
 
-The report binds exact artifact/checker hashes and records keyless startup, chain
+The current report binds exact artifact/checker hashes and records keyless startup, chain
 observation, signature refusal, duplicate-process exclusion, crash/checkpoint
 recovery, graceful shutdown and disallowed RPC attempts. Its scope is explicitly
-`isolated-observation-smoke-v1`. It does not establish malicious-binary attestation,
+`isolated-observation-transfer-v2`. It does not establish malicious-binary attestation,
 transfer correctness, contract compatibility, migration safety or readiness for a
-signing-quorum rollout. Full regression suites, test promotion, approvals and the
-staged installer remain separate required gates.
+signing-quorum rollout. Full regression suites, test promotion and approvals
+remain separate required gates.
 
 ## Multiple local bridge instances
 

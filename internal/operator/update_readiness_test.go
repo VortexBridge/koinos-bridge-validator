@@ -48,8 +48,8 @@ func TestUpdateReadinessPersistsExactBlockedEvidence(t *testing.T) {
 	if check, _ := readinessCheck(receipt, "staged-artifact"); check.State != "passed" {
 		t.Fatalf("valid staged bytes were not recognized: %+v", check)
 	}
-	if check, _ := readinessCheck(receipt, "installer"); check.State != "blocked" {
-		t.Fatal("readiness receipt enabled the missing installer")
+	if check, _ := readinessCheck(receipt, "installer"); check.State != "passed" {
+		t.Fatal("readiness receipt did not detect the durable local installer")
 	}
 	again, err := s.CheckUpdateReadiness(context.Background(), req, now.Add(time.Second))
 	if err != nil || !again.CheckedAt.Equal(receipt.CheckedAt) {
@@ -218,7 +218,7 @@ func TestUpdateReadinessHTTPIsDurableAndNonAuthorizing(t *testing.T) {
 		InstallerEnabled bool                     `json:"installerEnabled"`
 		Readiness        []UpdateReadinessReceipt `json:"readiness"`
 	}
-	if err := json.Unmarshal(listed.Body.Bytes(), &body); err != nil || body.InstallerEnabled || len(body.Readiness) != 1 || body.Readiness[0].ID != receipt.ID || body.Readiness[0].ActivationReady {
+	if err := json.Unmarshal(listed.Body.Bytes(), &body); err != nil || !body.InstallerEnabled || len(body.Readiness) != 1 || body.Readiness[0].ID != receipt.ID || body.Readiness[0].ActivationReady {
 		t.Fatalf("updates inventory hid or overstated readiness: %s", listed.Body.String())
 	}
 }

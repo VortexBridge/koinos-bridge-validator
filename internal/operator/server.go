@@ -23,6 +23,7 @@ type Server struct {
 	instances    map[string]*Server
 	observe      ObservationProvider
 	governance   GovernanceExecutor
+	updater      UpdateDriver
 }
 
 // ObservationProvider supplies fresh chain state. The default provider is the
@@ -31,7 +32,7 @@ type Server struct {
 type ObservationProvider func(context.Context, Binding) Observation
 
 func NewServer(store *Store, token, host string, origins []string) *Server {
-	s := &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2), instances: map[string]*Server{}, observe: Observe}
+	s := &Server{Store: store, Token: token, Host: host, Origins: origins, observations: map[string]Observation{}, reads: make(chan struct{}, 2), instances: map[string]*Server{}, observe: Observe, updater: NewLocalUpdateDriver(store)}
 	for _, entry := range store.LocalInstances() {
 		if entry.ID != "default" {
 			child, _ := store.LocalInstance(entry.ID)
@@ -39,6 +40,13 @@ func NewServer(store *Store, token, host string, origins []string) *Server {
 		}
 	}
 	return s
+}
+
+// SetUpdateDriver replaces the fixed local update executor for isolated tests.
+// Call it before serving requests. A nil driver disables execution but keeps
+// public operation history readable.
+func (s *Server) SetUpdateDriver(driver UpdateDriver) {
+	s.updater = driver
 }
 
 // SetObservationProvider installs one provider for the root and every local
@@ -368,7 +376,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 202, status)
 	case r.URL.Path == "/v1/capabilities" && r.Method == "GET":
-		writeJSON(w, 200, map[string]interface{}{"families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "governanceActions": []string{"set_pause"}, "governanceWorkflowEnabled": true, "governanceSubmissionEnabled": s.governance != nil, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
+		writeJSON(w, 200, map[string]interface{}{"operatorApiVersion": "v1", "families": []map[string]string{{"id": "evm", "codec": EVMCodec, "sourceCommit": EVMSource}, {"id": "koinos", "codec": KoinosCodec, "sourceCommit": KoinosSource}}, "actions": actionIDs, "governanceActions": []string{"set_pause"}, "governanceWorkflowEnabled": true, "governanceSubmissionEnabled": s.governance != nil, "signingEnabled": false, "browserSigningEnabled": false, "managedSignerStatusEnabled": true, "lifecycleEnabled": true, "workerModes": []string{"observation-only"}})
 	case r.URL.Path == "/v1/updates" && r.Method == "GET":
 		trust, err := s.Store.ReleaseTrust()
 		publishers := []string{}
@@ -383,7 +391,91 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			installedProblem = installedErr.Error()
 		}
 		readiness := s.Store.UpdateReadinessInventory()
-		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": false, "installedVersion": installed, "installedProblem": installedProblem, "staged": s.Store.StagedReleases(time.Now().UTC()), "readiness": readiness.Receipts, "readinessProblem": readiness.Problem, "readinessNotice": readiness.Notice})
+		writeJSON(w, 200, map[string]interface{}{"approvals": s.Store.ReleaseApprovals(), "trustedPublishers": publishers, "requiredSignatures": trust.RequiredSignatures, "installerEnabled": s.updater != nil, "installedVersion": installed, "installedProblem": installedProblem, "staged": s.Store.StagedReleases(time.Now().UTC()), "readiness": readiness.Receipts, "readinessProblem": readiness.Problem, "readinessNotice": readiness.Notice, "operation": s.Store.UpdateOperationState()})
+	case r.URL.Path == "/v1/updates/start" && r.Method == "POST":
+		var req BeginUpdateRequest
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		operation, err := s.Store.BeginUpdate(req, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 201, operation)
+	case r.URL.Path == "/v1/updates/advance" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		operation, err := s.Store.AdvanceUpdate(r.Context(), req.ID, s.updater, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, operation)
+	case r.URL.Path == "/v1/updates/rollback" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		operation, err := s.Store.RollbackUpdate(r.Context(), req.ID, s.updater, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, operation)
+	case r.URL.Path == "/v1/updates/forward-recover" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+			ForwardRecoveryRequest
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		operation, err := s.Store.ForwardRecoverUpdate(r.Context(), req.ID, req.ForwardRecoveryRequest, s.updater, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, operation)
+	case r.URL.Path == "/v1/updates/complete" && r.Method == "POST":
+		var req struct {
+			ID         string `json:"id"`
+			ProgressID string `json:"progressId"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		operation, err := s.Store.ConfirmUpdateProgress(req.ID, req.ProgressID, time.Now().UTC())
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, operation)
+	case r.URL.Path == "/v1/updates/archive" && r.Method == "POST":
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := decode(w, r, &req); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		inventory, err := s.Store.ArchiveUpdate(req.ID)
+		if err != nil {
+			fail(w, 409, err.Error())
+			return
+		}
+		writeJSON(w, 200, inventory)
 	case r.URL.Path == "/v1/updates/readiness" && r.Method == "POST":
 		var req UpdateReadinessRequest
 		if err := decode(w, r, &req); err != nil {
@@ -452,7 +544,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			observations = append(observations, o)
 		}
 		s.mu.Unlock()
-		writeJSON(w, 200, map[string]interface{}{"version": "operator-dev-2", "instanceId": s.Store.InstanceID(), "mode": "private-control-plane", "revision": revision, "profiles": profiles, "observations": observations, "events": events, "signerAvailable": false, "browserSigningAvailable": false, "notice": "Private control plane. Managed signer state is available through its typed lifecycle view; unlock and signing remain restricted to the protected local terminal."})
+		writeJSON(w, 200, map[string]interface{}{"version": "operator-dev-3", "operatorApiVersion": "v1", "instanceId": s.Store.InstanceID(), "mode": "private-control-plane", "revision": revision, "profiles": profiles, "observations": observations, "events": events, "signerAvailable": false, "browserSigningAvailable": false, "notice": "Private control plane. Managed signer state is available through its typed lifecycle view; unlock and signing remain restricted to the protected local terminal."})
 	case r.URL.Path == "/v1/config/validate" && r.Method == "POST":
 		var b Binding
 		if err := decode(w, r, &b); err != nil {

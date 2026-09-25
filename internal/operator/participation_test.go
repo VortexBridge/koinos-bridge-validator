@@ -48,6 +48,130 @@ func participationFixture(t *testing.T) (maintenanceFixture, ParticipationReques
 	}
 	return f, request, reports
 }
+
+func TestParticipationStageEvidenceIsPrivateFreshAndPolicyBound(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	s := f.stores[1]
+	now := time.Now().UTC()
+	evidence := []ParticipationStageEvidence{}
+	for i, stage := range []string{"peer", "api", "frontend"} {
+		evidence = append(evidence, ParticipationStageEvidence{SchemaVersion: 1, InstanceID: s.InstanceID(), RouteID: f.policy.Routes[0].ID, Stage: stage, Kind: participationStageKinds[stage], CheckedAt: now.Add(-time.Second), ExpiresAt: now.Add(2 * time.Minute), EvidenceDigest: fmt.Sprintf("%064x", i+1), State: "passed", Notice: "Synthetic isolated stage evidence; no production endpoint or credential is included."})
+	}
+	path := filepath.Join(t.TempDir(), "stage-evidence.json")
+	raw, _ := json.Marshal(evidence)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := s.RecordParticipationStageEvidence(path, now)
+	if err != nil || !reflect.DeepEqual(recorded, evidence) {
+		t.Fatal("valid private stage evidence was not recorded", err)
+	}
+	stored := filepath.Join(s.dir, "maintenance", "stage-evidence.json")
+	if info, err := os.Stat(stored); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("stage evidence is not a private durable file", err)
+	}
+	loaded, err := s.participationStageEvidence(f.policy, now.Add(time.Second))
+	if err != nil || len(loaded) != 3 {
+		t.Fatal("recorded stage evidence could not be revalidated", loaded, err)
+	}
+
+	invalid := append([]ParticipationStageEvidence{}, evidence...)
+	invalid[0].InstanceID = f.stores[0].InstanceID()
+	raw, _ = json.Marshal(invalid)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecordParticipationStageEvidence(path, now); err == nil {
+		t.Fatal("stage evidence for another operator was accepted")
+	}
+	if _, err := s.RecordParticipationStageEvidence("relative.json", now); err == nil {
+		t.Fatal("relative unreviewed stage evidence path was accepted")
+	}
+}
+
+func TestParticipationExternalStagesExcludeUpdatingOperator(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	requester := f.stores[0].InstanceID()
+	otherA, otherB := f.stores[1].InstanceID(), f.stores[2].InstanceID()
+	states := map[string]map[string]string{f.policy.Routes[0].ID: {otherA: "signing-key-proved", otherB: "signing-key-proved"}}
+	external := map[string]map[string]bool{}
+	for _, stage := range []string{"peer", "api", "frontend"} {
+		external[contractTargetKey(f.policy.Routes[0].ID, stage)] = map[string]bool{requester: true, otherA: true, otherB: true}
+	}
+	stages, contractKeys := participationStages(f.policy, requester, states, external)
+	if !contractKeys {
+		t.Fatal("two non-updating synthetic signers did not satisfy contract key thresholds")
+	}
+	for _, stage := range stages {
+		if stage.State != "key-threshold-passed" && stage.State != "evidence-threshold-passed" {
+			t.Fatalf("stage %s did not pass with two non-updating operators: %+v", stage.Stage, stage)
+		}
+		for _, id := range stage.Eligible {
+			if id == requester {
+				t.Fatalf("updating operator counted toward its own %s threshold", stage.Stage)
+			}
+		}
+	}
+}
+
+func TestParticipationCanJoinEverySyntheticStageWithoutCountingRequester(t *testing.T) {
+	f := newMaintenanceFixture(t)
+	identities := make([]syntheticBridgeIdentity, len(f.stores))
+	for i := range f.stores {
+		identities[i] = newSyntheticBridgeIdentity(t)
+		f.policy.Members[i].EVMAddress = identities[i].evmAddress
+		f.policy.Members[i].KoinosAddress = identities[i].koinosAddress
+	}
+	f.plan.PolicyDigest = MaintenancePolicyDigest(f.policy)
+	f.savePolicy(t)
+	envelope := MaintenanceEnvelope{Plan: f.plan}
+	for i := range f.stores {
+		envelope.Endorsements = append(envelope.Endorsements, f.endorse(t, i, f.plan))
+	}
+	revision, _, _ := f.stores[0].Summary()
+	request, err := f.stores[0].BeginParticipation(BeginParticipationRequest{"all-stage-proof", revision, envelope}, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reports := make([]SignedParticipationObservation, len(f.stores))
+	for i, operatorStore := range f.stores {
+		reports[i] = signedKeyParticipationResponse(t, operatorStore, request, f.policy.Routes[0], identities[i])
+		checkedAt := reports[i].Observation.ObservedAt.Add(-time.Millisecond)
+		for j, stage := range []string{"peer", "api", "frontend"} {
+			reports[i].Observation.StageEvidence = append(reports[i].Observation.StageEvidence, ParticipationStageEvidence{SchemaVersion: 1, InstanceID: operatorStore.InstanceID(), RouteID: f.policy.Routes[0].ID, Stage: stage, Kind: participationStageKinds[stage], CheckedAt: checkedAt, ExpiresAt: checkedAt.Add(time.Minute), EvidenceDigest: fmt.Sprintf("%064x", i*10+j+1), State: "passed", Notice: "Synthetic isolated stage evidence."})
+		}
+		_, key, keyErr := operatorStore.maintenanceIdentity()
+		if keyErr != nil {
+			t.Fatal(keyErr)
+		}
+		reports[i].Signature = hex.EncodeToString(ed25519.Sign(key, participationBytes("VORTEX-MAINTENANCE-OBSERVATION-V1", reports[i].Observation)))
+	}
+	now := request.Probe.Challenge.IssuedAt.Add(2 * time.Second)
+	verified, err := VerifyParticipation(request, reports, f.policy, now)
+	if err != nil || !verified.AllResponded || !verified.ContractKeyThresholdsMet {
+		t.Fatal("fresh all-stage observations failed", verified, err)
+	}
+	requester := f.stores[0].InstanceID()
+	eligible := []string{f.stores[1].InstanceID(), f.stores[2].InstanceID()}
+	applyParticipationContractObservations(&verified, []ParticipationContractObservation{
+		{RouteID: f.policy.Routes[0].ID, Stage: "evm-contract", Family: "evm", State: "verified", Quorum: 2, MembershipEligible: eligible},
+		{RouteID: f.policy.Routes[0].ID, Stage: "koinos-contract", Family: "koinos", State: "verified", Quorum: 2, MembershipEligible: eligible},
+	})
+	if !verified.ActivationReady || !verified.ContractMembershipThresholdsMet {
+		t.Fatal("complete synthetic participation evidence did not become ready", verified)
+	}
+	for _, stage := range verified.Stages {
+		for _, id := range stage.Eligible {
+			if id == requester {
+				t.Fatalf("requester counted toward %s", stage.Stage)
+			}
+		}
+	}
+	reports[1].Observation.StageEvidence[0].EvidenceDigest = strings.Repeat("f", 64)
+	if _, err := VerifyParticipation(request, reports, f.policy, now); err == nil {
+		t.Fatal("changed stage evidence survived the operator signature")
+	}
+}
 func TestParticipationAuthenticatedUnavailableIsNotQuorum(t *testing.T) {
 	f, req, reports := participationFixture(t)
 	report, err := f.stores[0].CheckParticipation(context.Background(), reports, time.Now().UTC())

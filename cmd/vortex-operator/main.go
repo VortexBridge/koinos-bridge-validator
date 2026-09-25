@@ -60,6 +60,7 @@ func run() error {
 	ethereumHeight := flags.String("review-ethereum-height", "", "exact restored Ethereum checkpoint in decimal")
 	koinosHeight := flags.String("review-koinos-height", "", "exact restored Koinos checkpoint in decimal")
 	participationFile := flags.String("participation-file", "", "private participation request or response array JSON")
+	stageEvidenceFile := flags.String("stage-evidence-file", "", "private reviewed peer, API and operator-UI stage evidence JSON")
 	participationID := flags.String("participation-id", "", "unique lowercase participation challenge ID")
 	maintenanceFile := flags.String("maintenance-file", "", "private portable maintenance envelope JSON")
 	maintenanceDigest := flags.String("maintenance-digest", "", "exact locally reviewed maintenance plan digest")
@@ -93,8 +94,8 @@ func run() error {
 	if flags.NArg() > 1 {
 		return errors.New("provide one command; place all flags before it")
 	}
-	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" && command != "governance-submit" && command != "governance-reconcile" {
-		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, wave-result-create, wave-result-verify, wave-results, governance-sign, governance-submit, governance-reconcile")
+	if command != "serve" && command != "status" && command != "token-path" && command != "worker-register" && command != "release-stage" && command != "release-adopt" && command != "candidate-test" && command != "backup-configure" && command != "backup-create" && command != "backup-restore" && command != "restore-review" && command != "instance-create" && command != "instances" && command != "doctor" && command != "worker-prepare" && command != "maintenance-init" && command != "maintenance-status" && command != "maintenance-verify" && command != "maintenance-endorse" && command != "participation-begin" && command != "participation-respond" && command != "participation-verify" && command != "participation-status" && command != "participation-stage-record" && command != "wave-result-create" && command != "wave-result-verify" && command != "wave-results" && command != "governance-sign" && command != "governance-submit" && command != "governance-reconcile" {
+		return errors.New("commands: serve, status, token-path, worker-register, release-stage, release-adopt, candidate-test, backup-configure, backup-create, backup-restore, restore-review, instance-create, instances, doctor, worker-prepare, maintenance-init, maintenance-status, maintenance-verify, maintenance-endorse, participation-begin, participation-respond, participation-verify, participation-status, participation-stage-record, wave-result-create, wave-result-verify, wave-results, governance-sign, governance-submit, governance-reconcile")
 	}
 	s, err := operator.OpenStore(*dir)
 	if err != nil {
@@ -218,6 +219,16 @@ func run() error {
 	}
 	if command == "participation-status" {
 		return json.NewEncoder(os.Stdout).Encode(s.ParticipationState(time.Now().UTC()))
+	}
+	if command == "participation-stage-record" {
+		if *stageEvidenceFile == "" {
+			return errors.New("participation stage recording requires --stage-evidence-file")
+		}
+		evidence, err := s.RecordParticipationStageEvidence(*stageEvidenceFile, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"recorded": len(evidence), "state": "reviewed-local-evidence", "notice": "These short-lived operator attestations are signed with the next participation response; they are not remote host attestation."})
 	}
 	if command == "wave-results" {
 		return json.NewEncoder(os.Stdout).Encode(s.WaveResultInventory())

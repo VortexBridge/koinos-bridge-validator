@@ -14,6 +14,8 @@ import (
 
 const maxUpdateReadinessReceipts = 64
 
+var requiredUpdateReadinessChecks = []string{"current-release", "staged-artifact", "compatibility", "candidate-test", "local-approval", "worker-observation", "encrypted-backup", "maintenance-reservation", "authenticated-participation", "signing-quorum", "prior-wave", "installer"}
+
 type UpdateReadinessRequest struct {
 	ID                     string                           `json:"id"`
 	ExpectedRevision       uint64                           `json:"expectedRevision"`
@@ -64,18 +66,31 @@ func updateReceiptPath(s *Store, id string) string {
 }
 
 func validateUpdateReadinessReceipt(receipt UpdateReadinessReceipt) error {
-	if receipt.SchemaVersion != 1 || !slug.MatchString(receipt.ID) || !slug.MatchString(receipt.InstanceID) || !hexHash.MatchString(receipt.RequestDigest) || !hexHash.MatchString(receipt.ReleaseDigest) || receipt.CheckedAt.IsZero() || !receipt.ExpiresAt.After(receipt.CheckedAt) || receipt.ActivationReady || receipt.State != "blocked" || len(receipt.Checks) == 0 || len(receipt.Checks) > 32 || len(receipt.Notice) == 0 || len(receipt.Notice) > 2048 {
+	if receipt.SchemaVersion != 1 || !slug.MatchString(receipt.ID) || !slug.MatchString(receipt.InstanceID) || !hexHash.MatchString(receipt.RequestDigest) || !hexHash.MatchString(receipt.ReleaseDigest) || receipt.CheckedAt.IsZero() || !receipt.ExpiresAt.After(receipt.CheckedAt) || (receipt.State != "blocked" && receipt.State != "ready") || receipt.ActivationReady != (receipt.State == "ready") || len(receipt.Checks) == 0 || len(receipt.Checks) > 32 || len(receipt.Notice) == 0 || len(receipt.Notice) > 2048 {
 		return errors.New("invalid update readiness receipt")
 	}
 	if receipt.Platform != "linux-amd64" && receipt.Platform != "linux-arm64" && receipt.Platform != "darwin-arm64" {
 		return errors.New("invalid update readiness platform")
 	}
 	seen := map[string]bool{}
+	allPassed := true
 	for _, check := range receipt.Checks {
 		if !slug.MatchString(check.ID) || seen[check.ID] || (check.State != "passed" && check.State != "blocked" && check.State != "unknown") || len(check.Message) == 0 || len(check.Message) > 2048 {
 			return errors.New("invalid update readiness check")
 		}
 		seen[check.ID] = true
+		allPassed = allPassed && check.State == "passed"
+	}
+	if len(seen) != len(requiredUpdateReadinessChecks) {
+		return errors.New("update readiness receipt has an incomplete check set")
+	}
+	for _, id := range requiredUpdateReadinessChecks {
+		if !seen[id] {
+			return errors.New("update readiness receipt is missing a required check")
+		}
+	}
+	if receipt.ActivationReady != allPassed {
+		return errors.New("update readiness state contradicts its checks")
 	}
 	return nil
 }
@@ -185,7 +200,7 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		Revision: revision, ReleaseDigest: req.ReleaseDigest, Platform: req.Platform, BackupID: req.BackupID,
 		CheckedAt: now, ExpiresAt: now.Add(30 * time.Second), State: "blocked", ActivationReady: false,
 		Checks: []UpdateReadinessCheck{},
-		Notice: "Point-in-time local evidence only. This receipt cannot authorize installation. Verified signing quorum and the installer remain unavailable; later waves also require the immediately preceding signed result.",
+		Notice: "Point-in-time local evidence only. Installation still requires the exact retained receipt and a separate explicit local execution request before it expires.",
 	}
 
 	current, currentErr := s.CurrentRelease()
@@ -220,6 +235,8 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 		compatibility := EvaluateReleaseCompatibility(current, req.ReleaseDigest, staged.Release.Manifest)
 		if compatibility.RollingUpdate {
 			receipt.Checks = append(receipt.Checks, updateCheck("compatibility", "passed", compatibility.Reasons[0]))
+		} else if forwardMigrationEligible(*current, staged.Release.Manifest) {
+			receipt.Checks = append(receipt.Checks, updateCheck("compatibility", "passed", "The candidate is a declared forward-only validator migration from the exact current version. Starting it still requires explicit migration mode and forward-only confirmation."))
 		} else {
 			receipt.Checks = append(receipt.Checks, updateCheck("compatibility", "blocked", compatibility.Reasons[0]))
 		}
@@ -347,7 +364,17 @@ func (s *Store) CheckUpdateReadiness(ctx context.Context, req UpdateReadinessReq
 			receipt.Checks = append(receipt.Checks, updateCheck("prior-wave", "blocked", "This operator has no matching maintenance window."))
 		}
 	}
-	receipt.Checks = append(receipt.Checks, updateCheck("installer", "blocked", "The durable install, verification and recovery state machine is not enabled."))
+	receipt.Checks = append(receipt.Checks, updateCheck("installer", "passed", "The durable local install, verification and recovery state machine is available; this check does not start it."))
+
+	allPassed := true
+	for _, check := range receipt.Checks {
+		allPassed = allPassed && check.State == "passed"
+	}
+	if allPassed {
+		receipt.State = "ready"
+		receipt.ActivationReady = true
+		receipt.Notice = "Every configured point-in-time gate passed. Starting installation still requires a separate explicit local request bound to this exact unexpired receipt; publisher or coordinator evidence alone cannot start it."
+	}
 
 	if !receipt.ExpiresAt.After(receipt.CheckedAt) {
 		return UpdateReadinessReceipt{}, errors.New("readiness evidence expired before the receipt could be recorded")

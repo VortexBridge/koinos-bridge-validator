@@ -25,16 +25,18 @@ type StagedRelease struct {
 	StagedAt time.Time       `json:"stagedAt"`
 }
 type StagedSummary struct {
-	Candidate      *CandidateResult      `json:"candidate,omitempty"`
-	Digest         string                `json:"digest"`
-	Platform       string                `json:"platform"`
-	Version        string                `json:"version"`
-	Component      string                `json:"component"`
-	ArtifactSHA256 string                `json:"artifactSha256"`
-	StagedAt       time.Time             `json:"stagedAt"`
-	State          string                `json:"state"`
-	Message        string                `json:"message"`
-	Compatibility  *ReleaseCompatibility `json:"compatibility,omitempty"`
+	Candidate        *CandidateResult      `json:"candidate,omitempty"`
+	Digest           string                `json:"digest"`
+	Platform         string                `json:"platform"`
+	Version          string                `json:"version"`
+	Component        string                `json:"component"`
+	Channel          string                `json:"channel"`
+	ArtifactSHA256   string                `json:"artifactSha256"`
+	StagedAt         time.Time             `json:"stagedAt"`
+	State            string                `json:"state"`
+	Message          string                `json:"message"`
+	Compatibility    *ReleaseCompatibility `json:"compatibility,omitempty"`
+	ForwardMigration bool                  `json:"forwardMigration"`
 }
 
 // OpenBoundedArtifact rejects non-regular files and symlinks before reading any
@@ -228,7 +230,7 @@ func (s *Store) StagedReleases(now time.Time) []StagedSummary {
 				continue
 			}
 			compatibility := EvaluateReleaseCompatibility(current, record.Digest, record.Release.Manifest)
-			summaries = append(summaries, StagedSummary{Candidate: s.candidateResult(record.Digest, record.Platform, record.Artifact.SHA256), Digest: record.Digest, Platform: record.Platform, Version: record.Release.Manifest.Version, Component: record.Release.Manifest.Component, ArtifactSHA256: record.Artifact.SHA256, StagedAt: record.StagedAt, State: "staged", Message: "Manifest verified against current publisher policy. Bytes must be rechecked before candidate testing or activation.", Compatibility: &compatibility})
+			summaries = append(summaries, StagedSummary{Candidate: s.candidateResult(record.Digest, record.Platform, record.Artifact.SHA256), Digest: record.Digest, Platform: record.Platform, Version: record.Release.Manifest.Version, Component: record.Release.Manifest.Component, Channel: record.Release.Manifest.Channel, ArtifactSHA256: record.Artifact.SHA256, StagedAt: record.StagedAt, State: "staged", Message: "Manifest verified against current publisher policy. Bytes must be rechecked before candidate testing or activation.", Compatibility: &compatibility, ForwardMigration: current != nil && forwardMigrationEligible(*current, record.Release.Manifest)})
 		}
 	}
 	sort.Slice(summaries, func(i, j int) bool {
